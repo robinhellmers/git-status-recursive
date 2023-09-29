@@ -53,12 +53,12 @@ main()
 {
 
     local tmpdir=$(mktemp -d)
-    local repo_count=$(find . -type d -name ".git" | wc -l)
+    local repo_count=$(find . \( -type d -o -type f \) -name ".git" | wc -l)
 
     # Start from the current directory
     local processes=()
     local processes_name=()
-    for d in $(find . -type d -name ".git")
+    for d in $(find . \( -type d -o -type f \) -name ".git")
     do
         sanitized_name=$(sanitize_filename "$d")
         check_git_status "$d" "$tmpdir/$sanitized_name" </dev/null  &
