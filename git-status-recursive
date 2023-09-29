@@ -44,15 +44,283 @@ library_sourcing
 ### MAIN ###
 ############
 
+COLOR_RED='\033[0;31m'
+COLOR_YELLOW='\033[0;33m'
+COLOR_BLUE='\033[0;34m'
+COLOR_END='\033[0m'
+
 main()
 {
-    local this_file="$(find_path 'this_file' "${#BASH_SOURCE[@]}" "${BASH_SOURCE[@]}")"
-    echo -e "\nthis_file: $this_file\n"
+
+    local tmpdir=$(mktemp -d)
+    local repo_count=$(find . -type d -name ".git" | wc -l)
+
+    # Start from the current directory
+    local processes=()
+    local processes_name=()
+    for d in $(find . -type d -name ".git")
+    do
+        sanitized_name=$(sanitize_filename "$d")
+        check_git_status "$d" "$tmpdir/$sanitized_name" </dev/null  &
+        processes+=( "$!" )
+        processes_name+=( "$d" )
+    done
+
+    local num_processes_done=0
+    local num_total_processes=${#processes[@]}
+    echo -e "\nRepositories checked:"
+    local i=0
+    while ((num_processes_done != num_total_processes ))
+    do
+        local indicator
+        case $((i++)) in
+            1)
+                indicator='/'
+                ;;
+            2)
+                indicator='-'
+                ;;
+            3)
+                indicator='\'
+                ;;
+            4)
+                indicator='|'
+                i=0
+                ;;
+        esac
+        num_processes_done=$(find "$tmpdir" -type f -name "*.done" | wc -l)
+        # -n and \r to replace line
+        echo -ne "***** [$indicator] $num_processes_done/$num_total_processes *****\r"
+        sleep 0.1
+    done
+    echo -ne "***** $num_processes_done/$num_total_processes *****    \r"
+    echo
+
+    wait "${processes[@]}"
+
+    # Output everythings from background jobs
+    cat "$tmpdir"/*
+
+    rm -rf "$tmpdir"
 }
 
 ###################
 ### END OF MAIN ###
 ###################
+
+sanitize_filename()
+{
+    local new_name
+    [[ "$1" == "./.git" ]] && new_name="$(pwd)" || new_name="$1"
+
+    # Remove potential /.git suffix, strip leading ./ from the path, and replace / with _
+    new_name=$(echo "$new_name" | sed 's/\/\.git$//' | sed 's/^.\///' | sed 's/\//__/g')
+    echo "$new_name"
+}
+
+git_status_porcelain_w_parsing()
+{
+    unchanged=0
+    modified=0
+    added=0
+    deleted=0
+    renamed=0
+    copied=0
+    unmerged=0
+    untracked=0
+    ignored=0
+}
+
+# Excludes current branch in output
+git_ahead_behind_status_branches()
+{
+    local current_branch=$(git rev-parse --abbrev-ref HEAD)
+
+    array_local_branch=()
+    array_remote_name=()
+    array_remote_branch=()
+    array_num_ahead_remote=()
+    array_num_behind_remote=()
+
+    local local_branch remote track
+    
+    local array_output_branch_on_track=()
+    local array_output_branch_no_remote=()
+    local array_output_rest=()
+    local branches_info=$(git for-each-ref --format="%(refname:short) %(upstream:short) %(upstream:track)" refs/heads)
+    while IFS=" " read -r local_branch remote track # <<< "$branches_info"
+    do
+        array_local_branch+=("$local_branch")
+
+        local remote_name="${remote%%/*}"
+        local remote_branch="${remote#*/}"
+        array_remote_name+=("$remote_name")
+        array_remote_branch+=("$remote_branch")
+
+        local num_ahead_remote="$(grep -Po '(?<=ahead )\d+' <<< "$track")"
+        local num_behind_remote="$(grep -Po '(?<=behind )\d+' <<< "$track")"
+        [[ -z "$num_ahead_remote" ]] && num_ahead_remote=0
+        [[ -z "$num_behind_remote" ]] && num_behind_remote=0
+        array_num_ahead_remote+=($num_ahead_remote)
+        array_num_behind_remote+=($num_behind_remote)
+
+        [[ "$local_branch" == "$current_branch" ]] && continue
+
+        format_ahead_behind_status_branch "$local_branch" \
+                                          "$remote_name" \
+                                          "$remote_branch" \
+                                          "$num_ahead_remote" \
+                                          "$num_behind_remote"
+
+        case "$formatted_output" in
+            *'[ON TRACK]'*)
+                array_output_branch_on_track+=("$formatted_output")
+                ;;
+            *'[NO REMOTE]'*)
+                array_output_branch_no_remote+=("$formatted_output")
+                ;;
+            *)
+                array_output_rest+=("$formatted_output")
+                ;;
+        esac
+
+    done <<< "$branches_info"
+
+    local extra_ws
+
+    # Output branches on track
+    if (( ${#array_output_branch_on_track[@]} != 0 ))
+    then
+        for output in "${array_output_branch_on_track[@]}"
+        do
+            echo -e "$output"
+        done
+        extra_ws='true'
+    fi
+
+    # Output branches without remote
+    if (( ${#array_output_branch_no_remote[@]} != 0 ))
+    then
+        [[ "$extra_ws" == 'true' ]] && echo
+        extra_ws='false'
+
+        for output in "${array_output_branch_no_remote[@]}"
+        do
+            echo -e "$output"
+        done
+        extra_ws='true'
+    fi
+    
+    # Output the rest of the branches
+    if (( ${#array_output_rest[@]} != 0 ))
+    then
+        [[ "$extra_ws" == 'true' ]] && echo
+        extra_ws='false'
+
+        for output in "${array_output_rest[@]}"
+        do
+            echo -e "$output"
+        done
+    fi
+
+}
+
+# Output in variable 'formatted_output'
+format_ahead_behind_status_branch()
+{
+    local local_branch="$1"
+    local remote_name="$2"
+    local remote_branch="$3"
+    local num_ahead_remote="$4"
+    local num_behind_remote="$5" 
+
+    if [[ -z "$remote_branch" ]]
+    then # No remote
+        formatted_output="${COLOR_RED}[NO REMOTE]${COLOR_END} $local_branch"
+        return
+    fi
+
+    if (( num_ahead_remote == 0 && num_behind_remote == 0 ))
+    then # On track with remote
+        formatted_output="[ON TRACK] $local_branch"
+        return
+    fi
+
+    # Not on track with remote
+    local output_ahead="[${num_ahead_remote} AHEAD]"
+    local output_behind="[${num_behind_remote} BEHIND]"
+
+    (( num_ahead_remote != 0 )) && output_ahead="${COLOR_RED}${output_ahead}${COLOR_END}"
+    (( num_behind_remote != 0 )) && output_behind="${COLOR_YELLOW}${output_behind}${COLOR_END}"
+
+    formatted_output="${output_ahead}${output_behind} $local_branch -> $remote_name/$remote_branch"
+}
+
+check_git_status()
+{
+    local dir="$1"
+    local outfile="$2"
+
+    exec 1>"$outfile"
+    exec 2>"$outfile"
+
+    repo_dir="${dir%/.git}"
+
+    pushd "$repo_dir" >/dev/null || return
+    
+    [[ "$(dirname "$dir")" == '.' ]] && repo_dir="./$(basename $(pwd))"
+
+    echo -e "\n${COLOR_BLUE}======================== Repo: $repo_dir ========================${COLOR_END}"
+    
+    git fetch --all &> /dev/null
+
+    echo
+    echo "*** Check local branches ***"
+    echo
+    git_ahead_behind_status_branches
+
+    echo
+    echo "*** Check remote branches ***"
+    echo
+    # For every remote branch
+    for remote_branch in $(git for-each-ref --format '%(refname:short)' refs/remotes)
+    do
+        [[ "$remote_branch" == */HEAD ]] && continue
+
+        # Check if any local branch tracks the current remote branch
+        local_branch=$(git for-each-ref --format '%(refname:short) %(upstream:short)' refs/heads/ | grep "$remote_branch$"  | cut -d' ' -f1)
+
+        if [ -z "$local_branch" ]
+        then
+            echo -e "\033[0;33m[NO LOCAL]\033[0m $remote_branch"
+        fi
+    done
+
+    echo
+    echo "*** Check current branch ***"
+    echo
+    local i
+    local found='true'
+    local current_branch=$(git rev-parse --abbrev-ref HEAD)
+    for index in ${!array_local_branch[@]}
+    do
+        [[ "${array_local_branch[i]}" == "$current_branch" ]] && break
+    done
+
+    format_ahead_behind_status_branch "$current_branch" \
+                                      "${array_remote_name[index]}" \
+                                      "${array_remote_branch[index]}" \
+                                      "${array_num_ahead_remote[index]}" \
+                                      "${array_num_behind_remote[index]}"
+    
+    echo -e "$formatted_output"
+
+    touch "$outfile.done" &> /dev/null
+    popd >/dev/null
+
+    exec 1>/dev/tty
+    exec 2>/dev/tty
+}
 
 main_stderr_red()
 {
