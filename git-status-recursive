@@ -299,12 +299,12 @@ check_git_status()
     echo
     echo "*** Check current branch ***"
     echo
-    local i
+    local index
     local found='true'
     local current_branch=$(git rev-parse --abbrev-ref HEAD)
     for index in ${!array_local_branch[@]}
     do
-        [[ "${array_local_branch[i]}" == "$current_branch" ]] && break
+        [[ "${array_local_branch[index]}" == "$current_branch" ]] && break
     done
 
     format_ahead_behind_status_branch "$current_branch" \
