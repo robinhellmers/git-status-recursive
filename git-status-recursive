@@ -29,6 +29,7 @@ library_sourcing()
 
     ### Source libraries ###
     source "$LIB_PATH/lib_core.bash"
+    source "$LIB_PATH/lib_handle_input.bash"
 }
 
 # Minimal version of find_path(). Should only be used within this script to source library defining find_path().
@@ -51,14 +52,17 @@ COLOR_END='\033[0m'
 
 main()
 {
+    _handle_args_main "$@"
+    # Output:
+    # - base_dir (Optional)
 
     local tmpdir=$(mktemp -d)
-    local repo_count=$(find . \( -type d -o -type f \) -name ".git" | wc -l)
+    local repo_count=$(find "$base_dir" \( -type d -o -type f \) -name ".git" | wc -l)
 
     # Start from the current directory
     local processes=()
     local processes_name=()
-    for d in $(find . \( -type d -o -type f \) -name ".git")
+    for d in $(find "$base_dir" \( -type d -o -type f \) -name ".git")
     do
         sanitized_name=$(sanitize_filename "$d")
         check_git_status "$d" "$tmpdir/$sanitized_name" </dev/null  &
@@ -107,6 +111,35 @@ main()
 ###################
 ### END OF MAIN ###
 ###################
+
+register_function_flags 'main'
+
+_handle_args_main()
+{
+    _handle_args 'main' "$@"
+
+    define function_usage << END_OF_FUNCTION_USAGE
+Usage: git-status-recursive [ DIR ]
+    DIR: (Optional)
+        * Directory to recursively check down from.
+END_OF_FUNCTION_USAGE
+
+    if (( ${#non_flagged_args[@]} != 0 ))
+    then
+        main_input_dir=${non_flagged_args[0]}
+        if ! [[ -d "$main_input_dir" ]]
+        then
+            define error_info << END_OF_ERROR_INFO
+Given [ DIR ] is not a directory: '$main_input_dir'
+END_OF_ERROR_INFO
+            invalid_function_usage 2 "$function_usage" "$error_info"
+            exit 1
+        fi
+    fi
+
+    [[ -n "$main_input_dir" ]] && base_dir="$main_input_dir" || base_dir='.' 
+
+}
 
 sanitize_filename()
 {
