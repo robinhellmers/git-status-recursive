@@ -103,7 +103,19 @@ main()
     wait "${processes[@]}"
 
     # Output everythings from background jobs
-    cat "$tmpdir"/*
+    if $minimal_out
+    then
+        for file in "$tmpdir"/*
+        do
+            if [[ $(wc -l < "$file") > 1 ]]
+            then
+                echo
+                cat "$file"
+            fi
+        done
+    else
+        cat "$tmpdir"/*
+    fi
 
     rm -rf "$tmpdir"
 }
@@ -112,7 +124,8 @@ main()
 ### END OF MAIN ###
 ###################
 
-register_function_flags 'main'
+register_function_flags 'main' \
+                        '-m' '--minimal' 'false'
 
 _handle_args_main()
 {
@@ -124,6 +137,8 @@ Usage: git-status-recursive [ DIR ]
         * Directory to recursively check down from.
 END_OF_FUNCTION_USAGE
 
+    ###
+    # Non-flagged arguments
     if (( ${#non_flagged_args[@]} != 0 ))
     then
         main_input_dir=${non_flagged_args[0]}
@@ -139,6 +154,14 @@ END_OF_ERROR_INFO
 
     [[ -n "$main_input_dir" ]] && base_dir="$main_input_dir" || base_dir='.' 
 
+    ###
+    # -m, --minimal
+    minimal_out=false
+    if [[ "$minimal_flag" == 'true' ]]
+    then
+        main_minimal_flag='true'
+        minimal_out=true
+    fi
 }
 
 sanitize_filename()
@@ -188,11 +211,11 @@ index_working_tree_status()
 
     if [[ -z "$porcelain_status" ]]
     then
-        echo -e "\n[NO CHANGES]"
+        $minimal_out || echo -e "\n[NO CHANGES]"
         return 0
     fi
-    echo
-    echo "[   Index   ][ Worktree ] <File>"
+    $minimal_out || echo
+    $minimal_out || echo "[   Index   ][ Worktree ] <File>"
 
     while IFS= read -r line # <<< "$porcelain_status"
     do
@@ -207,6 +230,7 @@ index_working_tree_status()
 
     done <<< "$porcelain_status"
 
+    # $minimal_out && echo
 }
 
 # Excludes current branch in output
@@ -271,7 +295,7 @@ git_ahead_behind_status_branches()
     then
         for output in "${array_output_branch_on_track[@]}"
         do
-            echo -e "$output"
+            $minimal_out || echo -e "$output"
         done
         extra_ws='true'
     fi
@@ -279,7 +303,7 @@ git_ahead_behind_status_branches()
     # Output branches without remote
     if (( ${#array_output_branch_no_remote[@]} != 0 ))
     then
-        [[ "$extra_ws" == 'true' ]] && echo
+        [[ "$extra_ws" == 'true' && ! $minimal_out ]] && echo
         extra_ws='false'
 
         for output in "${array_output_branch_no_remote[@]}"
@@ -292,7 +316,7 @@ git_ahead_behind_status_branches()
     # Output the rest of the branches
     if (( ${#array_output_rest[@]} != 0 ))
     then
-        [[ "$extra_ws" == 'true' ]] && echo
+        [[ "$extra_ws" == 'true' && ! $minimal_out ]] && echo
         extra_ws='false'
 
         for output in "${array_output_rest[@]}"
@@ -348,18 +372,20 @@ check_git_status()
     
     [[ "$(dirname "$dir")" == '.' ]] && repo_dir="./$(basename $(pwd))"
 
-    echo -e "\n${COLOR_BLUE}======================== Repo: $repo_dir ========================${COLOR_END}"
+    $minimal_out || echo
+    echo -e "${COLOR_BLUE}======================== Repo: $repo_dir ========================${COLOR_END}"
     
     git fetch --all &> /dev/null
 
-    echo
-    echo "*** Check local branches ***"
-    echo
+    $minimal_out || echo
+    $minimal_out || echo "*** Check local branches ***"
+    $minimal_out || echo
+
     git_ahead_behind_status_branches
 
-    echo
-    echo "*** Check remote branches ***"
-    echo
+    $minimal_out || echo
+    $minimal_out || echo "*** Check remote branches ***"
+    $minimal_out || echo
     # For every remote branch
     for remote_branch in $(git for-each-ref --format '%(refname:short)' refs/remotes)
     do
@@ -374,9 +400,9 @@ check_git_status()
         fi
     done
 
-    echo
-    echo "*** Check current branch ***"
-    echo
+    $minimal_out || echo
+    $minimal_out || echo "*** Check current branch ***"
+    $minimal_out || echo
     local index
     local found='true'
     local current_branch=$(git rev-parse --abbrev-ref HEAD)
@@ -390,8 +416,11 @@ check_git_status()
                                       "${array_remote_branch[index]}" \
                                       "${array_num_ahead_remote[index]}" \
                                       "${array_num_behind_remote[index]}"
-    
-    echo -e "$formatted_output"
+
+    if ! ( $minimal_out && [[ "$formatted_output" == *'[ON TRACK]'* ]] )
+    then
+        echo -e "$formatted_output"
+    fi
 
     index_working_tree_status "$current_branch"
 
