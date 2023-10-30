@@ -151,17 +151,62 @@ sanitize_filename()
     echo "$new_name"
 }
 
-git_status_porcelain_w_parsing()
+convert_porcelain_status() {
+    local index_indicator="$1"
+    local worktree_indicator="$2"
+
+    [[ -z "$index_indicator" ]] && [[ -z "$worktree_indicator" ]] && return 1
+
+    if [[ "$index_indicator" == '?' && "$worktree_indicator" == '?' ]]
+    then
+        echo -e "${COLOR_RED}[[      UNTRACKED      ]]${COLOR_END}"
+        # echo -e "[[UNTRACKED]]${COLOR_RED}${COLOR_END}"
+        return 0
+    fi
+
+    local output=""
+    for indicator in "$index_indicator" "$worktree_indicator"
+    do
+        case "$indicator" in
+            'M') output+="${COLOR_RED}[ MODIFIED ]${COLOR_END}" ;;
+            'A') output+="${COLOR_RED}[ ADDED    ]${COLOR_END}" ;;
+            'D') output+="${COLOR_RED}[ DELETED  ]${COLOR_END}" ;;
+            'R') output+="${COLOR_RED}[ RENAMED  ]${COLOR_END}" ;;
+            'C') output+="${COLOR_RED}[ COPIED   ]${COLOR_END}" ;;
+            'U') output+="${COLOR_RED}[ UNMERGED ]${COLOR_END}" ;;
+            ' ') output+="[     -     ]" ;;
+            *)   output+="${COLOR_RED}[ UNKNOWN  ]${COLOR_END}" ;;
+        esac
+    done
+    echo -e "$output"
+}
+
+staging_working_tree_status()
 {
-    unchanged=0
-    modified=0
-    added=0
-    deleted=0
-    renamed=0
-    copied=0
-    unmerged=0
-    untracked=0
-    ignored=0
+    local current_branch="$1"
+    local porcelain_status=$(git status --porcelain)
+
+    if [[ -z "$porcelain_status" ]]
+    then
+        echo -e "\n[NO CHANGES]"
+        return 0
+    fi
+    echo
+    echo "[   Index   ][ Worktree ] <File>"
+
+    while IFS= read -r line # <<< "$porcelain_status"
+    do
+        local index_indicator="${line:0:1}"
+        local worktree_indicator="${line:1:1}"
+        local file="${line:3}"
+
+        local converted_indicators=$(convert_porcelain_status "$index_indicator" \
+                                                            "$worktree_indicator")
+
+        echo "${converted_indicators} ${file}"
+
+    done <<< "$porcelain_status"
+
 }
 
 # Excludes current branch in output
@@ -347,6 +392,8 @@ check_git_status()
                                       "${array_num_behind_remote[index]}"
     
     echo -e "$formatted_output"
+
+    staging_working_tree_status "$current_branch"
 
     touch "$outfile.done" &> /dev/null
     popd >/dev/null
