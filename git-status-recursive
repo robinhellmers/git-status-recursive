@@ -181,7 +181,7 @@ convert_porcelain_status() {
     echo -e "$output"
 }
 
-staging_working_tree_status()
+index_working_tree_status()
 {
     local current_branch="$1"
     local porcelain_status=$(git status --porcelain)
@@ -393,7 +393,7 @@ check_git_status()
     
     echo -e "$formatted_output"
 
-    staging_working_tree_status "$current_branch"
+    index_working_tree_status "$current_branch"
 
     touch "$outfile.done" &> /dev/null
     popd >/dev/null
