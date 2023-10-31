@@ -107,7 +107,7 @@ main()
     then
         for file in "$tmpdir"/*
         do
-            if [[ $(wc -l < "$file") > 1 ]]
+            if (( $(wc -l < "$file") > 3 ))
             then
                 echo
                 cat "$file"
