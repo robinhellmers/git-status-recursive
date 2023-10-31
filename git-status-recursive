@@ -182,31 +182,58 @@ convert_porcelain_status() {
 
     if [[ "$index_indicator" == '?' && "$worktree_indicator" == '?' ]]
     then
-        echo -e "${COLOR_RED}[[      UNTRACKED      ]]${COLOR_END}"
-        # echo -e "[[UNTRACKED]]${COLOR_RED}${COLOR_END}"
+        if $minimal_out
+        then
+            echo -e "${COLOR_RED}MODIFIED FILE${COLOR_END}"
+        else
+            echo -e "${COLOR_RED}[[      UNTRACKED      ]]${COLOR_END}"
+        fi
+
         return 0
     fi
 
     local output=""
+    local change
     for indicator in "$index_indicator" "$worktree_indicator"
     do
         case "$indicator" in
-            'M') output+="${COLOR_RED}[ MODIFIED ]${COLOR_END}" ;;
-            'A') output+="${COLOR_RED}[ ADDED    ]${COLOR_END}" ;;
-            'D') output+="${COLOR_RED}[ DELETED  ]${COLOR_END}" ;;
-            'R') output+="${COLOR_RED}[ RENAMED  ]${COLOR_END}" ;;
-            'C') output+="${COLOR_RED}[ COPIED   ]${COLOR_END}" ;;
-            'U') output+="${COLOR_RED}[ UNMERGED ]${COLOR_END}" ;;
-            ' ') output+="[     -     ]" ;;
-            *)   output+="${COLOR_RED}[ UNKNOWN  ]${COLOR_END}" ;;
+            'M')
+                change='true'
+                output+="${COLOR_RED}[ CHANGED  ]${COLOR_END}" ;;
+            'A')
+                change='true'
+                output+="${COLOR_RED}[ ADDED    ]${COLOR_END}" ;;
+            'D')
+                change='true'
+                output+="${COLOR_RED}[ DELETED  ]${COLOR_END}" ;;
+            'R')
+                change='true'
+                output+="${COLOR_RED}[ RENAMED  ]${COLOR_END}" ;;
+            'C')
+                change='true'
+                output+="${COLOR_RED}[ COPIED   ]${COLOR_END}" ;;
+            'U')
+                change='true'
+                output+="${COLOR_RED}[ UNMERGED ]${COLOR_END}" ;;
+            ' ')
+                output+="[     -     ]"
+                change='false'
+                ;;
+            *)
+                change='true'
+                output+="${COLOR_RED}[ UNKNOWN  ]${COLOR_END}" ;;
         esac
     done
+
+    if $minimal_out && [[ "$change" == 'true' ]]
+    then
+        output="${COLOR_RED}MODIFIED FILE${COLOR_END}"
+    fi
     echo -e "$output"
 }
 
 index_working_tree_status()
 {
-    local current_branch="$1"
     local porcelain_status=$(git status --porcelain)
 
     if [[ -z "$porcelain_status" ]]
@@ -349,8 +376,15 @@ format_ahead_behind_status_branch()
     fi
 
     # Not on track with remote
-    local output_ahead="[${num_ahead_remote} AHEAD]"
-    local output_behind="[${num_behind_remote} BEHIND]"
+    local output_ahead output_behind
+    if $minimal_out
+    then
+        output_ahead="[${num_ahead_remote}>]"
+        output_behind="[<${num_behind_remote}]"
+    else
+        output_ahead="[${num_ahead_remote} AHEAD]"
+        output_behind="[${num_behind_remote} BEHIND]"
+    fi
 
     (( num_ahead_remote != 0 )) && output_ahead="${COLOR_RED}${output_ahead}${COLOR_END}"
     (( num_behind_remote != 0 )) && output_behind="${COLOR_YELLOW}${output_behind}${COLOR_END}"
@@ -417,12 +451,14 @@ check_git_status()
                                       "${array_num_ahead_remote[index]}" \
                                       "${array_num_behind_remote[index]}"
 
+    $minimal_out && echo -e "\nCurrent branch: $current_branch"
+
     if ! ( $minimal_out && [[ "$formatted_output" == *'[ON TRACK]'* ]] )
     then
         echo -e "$formatted_output"
     fi
 
-    index_working_tree_status "$current_branch"
+    index_working_tree_status
 
     touch "$outfile.done" &> /dev/null
     popd >/dev/null
