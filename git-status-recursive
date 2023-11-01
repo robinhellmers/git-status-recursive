@@ -132,7 +132,8 @@ main()
 ###################
 register_function_flags 'main' \
                         '-m' '--minimal' 'false' \
-                        '' '--exclude-submodule' 'false'
+                        '' '--exclude-submodule' 'false' \
+                        '' '--no-fetch' 'false'
 _handle_args_main()
 {
     _handle_args 'main' "$@"
@@ -172,6 +173,13 @@ END_OF_ERROR_INFO
     ##
     # --exclude-submodule
     if [[ "$exclude_submodule_flag" == 'true' ]]
+    then
+        :
+    fi
+
+    ##
+    # --no-fetch
+    if [[ "$no_fetch_flag" == 'true' ]]
     then
         :
     fi
@@ -450,7 +458,7 @@ check_git_status()
     $minimal_out || echo
     echo -e "${COLOR_BLUE}======================== Repo: $repo_dir ========================${COLOR_END}"
     
-    git fetch --all &> /dev/null
+    [[ "$no_fetch_flag" != 'true' ]] && git fetch --all &> /dev/null
 
     git_ahead_behind_status_branches
     git_check_no_local_branches
