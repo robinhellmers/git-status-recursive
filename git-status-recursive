@@ -273,9 +273,9 @@ git_ahead_behind_status_branches()
 
     local local_branch remote track
     
-    local array_output_branch_on_track=()
-    local array_output_branch_no_remote=()
-    local array_output_rest=()
+    array_output_branch_on_track=()
+    array_output_branch_no_remote=()
+    array_output_ahead_behind=()
     local branches_info=$(git for-each-ref --format="%(refname:short) %(upstream:short) %(upstream:track)" refs/heads)
     while IFS=" " read -r local_branch remote track # <<< "$branches_info"
     do
@@ -309,49 +309,11 @@ git_ahead_behind_status_branches()
                 array_output_branch_no_remote+=("$formatted_output")
                 ;;
             *)
-                array_output_rest+=("$formatted_output")
+                array_output_ahead_behind+=("$formatted_output")
                 ;;
         esac
 
     done <<< "$branches_info"
-
-    local extra_ws
-
-    # Output branches on track
-    if (( ${#array_output_branch_on_track[@]} != 0 ))
-    then
-        for output in "${array_output_branch_on_track[@]}"
-        do
-            $minimal_out || echo -e "$output"
-        done
-        extra_ws='true'
-    fi
-
-    # Output branches without remote
-    if (( ${#array_output_branch_no_remote[@]} != 0 ))
-    then
-        [[ "$extra_ws" == 'true' && ! $minimal_out ]] && echo
-        extra_ws='false'
-
-        for output in "${array_output_branch_no_remote[@]}"
-        do
-            echo -e "$output"
-        done
-        extra_ws='true'
-    fi
-    
-    # Output the rest of the branches
-    if (( ${#array_output_rest[@]} != 0 ))
-    then
-        [[ "$extra_ws" == 'true' && ! $minimal_out ]] && echo
-        extra_ws='false'
-
-        for output in "${array_output_rest[@]}"
-        do
-            echo -e "$output"
-        done
-    fi
-
 }
 
 # Output in variable 'formatted_output'
@@ -392,6 +354,72 @@ format_ahead_behind_status_branch()
     formatted_output="${output_ahead}${output_behind} $local_branch -> $remote_name/$remote_branch"
 }
 
+git_check_no_local_branches()
+{
+    array_output_branch_no_local=()
+
+    # For every remote branch
+    for remote_branch in $(git for-each-ref --format '%(refname:short)' refs/remotes)
+    do
+        [[ "$remote_branch" == */HEAD ]] && continue
+
+        # Check if any local branch tracks the current remote branch
+        local_branch=$(git for-each-ref --format '%(refname:short) %(upstream:short)' refs/heads/ | grep "$remote_branch$"  | cut -d' ' -f1)
+
+        if [ -z "$local_branch" ]
+        then
+            array_output_branch_no_local+=("${COLOR_YELLOW}[NO LOCAL]${COLOR_END} $remote_branch")
+        fi
+    done
+}
+
+print_branches_on_track()
+{
+    print_array -e "${array_output_branch_on_track[@]}"
+}
+
+print_branches_no_remote()
+{
+    print_array -e "${array_output_branch_no_remote[@]}"
+}
+
+print_branches_no_local()
+{
+    print_array -e "${array_output_branch_no_local[@]}"
+}
+
+print_branches_ahead_behind()
+{
+    print_array -e "${array_output_ahead_behind[@]}"
+}
+
+register_function_flags 'print_array' \
+                        '-e' '' 'false'
+
+print_array()
+{
+    _handle_args_print_array "$@"
+    local array=("${non_flagged_args[@]}")
+
+    local flags=""
+    [[ "$e_flag_print_array" == 'true' ]] && flags='-e'
+
+    for element in "${array[@]}"
+    do
+        echo $flags "$element"
+    done
+}
+
+_handle_args_print_array()
+{
+    _handle_args 'print_array' "$@"
+
+    if [[ "$e_flag" == 'true' ]]
+    then
+        e_flag_print_array='true'
+    fi
+}
+
 check_git_status()
 {
     local dir="$1"
@@ -411,28 +439,17 @@ check_git_status()
     
     git fetch --all &> /dev/null
 
-    $minimal_out || echo
-    $minimal_out || echo "*** Check local branches ***"
-    $minimal_out || echo
-
     git_ahead_behind_status_branches
+    git_check_no_local_branches
 
     $minimal_out || echo
-    $minimal_out || echo "*** Check remote branches ***"
+    $minimal_out || echo "*** Check branches ***"
     $minimal_out || echo
-    # For every remote branch
-    for remote_branch in $(git for-each-ref --format '%(refname:short)' refs/remotes)
-    do
-        [[ "$remote_branch" == */HEAD ]] && continue
 
-        # Check if any local branch tracks the current remote branch
-        local_branch=$(git for-each-ref --format '%(refname:short) %(upstream:short)' refs/heads/ | grep "$remote_branch$"  | cut -d' ' -f1)
-
-        if [ -z "$local_branch" ]
-        then
-            echo -e "\033[0;33m[NO LOCAL]\033[0m $remote_branch"
-        fi
-    done
+    $minimal_out || print_branches_on_track
+    print_branches_no_remote
+    print_branches_no_local
+    print_branches_ahead_behind
 
     $minimal_out || echo
     $minimal_out || echo "*** Check current branch ***"
