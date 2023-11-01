@@ -57,17 +57,24 @@ main()
     # - base_dir (Optional)
 
     local tmpdir=$(mktemp -d)
-    local repo_count=$(find "$base_dir" \( -type d -o -type f \) -name ".git" | wc -l)
 
-    # Start from the current directory
     local processes=()
     local processes_name=()
-    for d in $(find "$base_dir" \( -type d -o -type f \) -name ".git")
+    for found in $(find "$base_dir" \( -type d -o -type f \) -name ".git")
     do
-        sanitized_name=$(sanitize_filename "$d")
-        check_git_status "$d" "$tmpdir/$sanitized_name" </dev/null  &
+        if [[ -f "$found" ]]
+        then
+            # .git indicates this is a Git Submodule
+            [[ "$exclude_submodule_flag" == 'true' ]] && continue
+        else
+            # .git indicates this is a normal Git Repository
+            :
+        fi
+
+        sanitized_name=$(sanitize_filename "$found")
+        check_git_status "$found" "$tmpdir/$sanitized_name" </dev/null  &
         processes+=( "$!" )
-        processes_name+=( "$d" )
+        processes_name+=( "$found" )
     done
 
     local num_processes_done=0
@@ -123,10 +130,9 @@ main()
 ###################
 ### END OF MAIN ###
 ###################
-
 register_function_flags 'main' \
-                        '-m' '--minimal' 'false'
-
+                        '-m' '--minimal' 'false' \
+                        '' '--exclude-submodule' 'false'
 _handle_args_main()
 {
     _handle_args 'main' "$@"
@@ -161,6 +167,13 @@ END_OF_ERROR_INFO
     then
         main_minimal_flag='true'
         minimal_out=true
+    fi
+
+    ##
+    # --exclude-submodule
+    if [[ "$exclude_submodule_flag" == 'true' ]]
+    then
+        :
     fi
 }
 
