@@ -130,16 +130,22 @@ main()
 ###################
 ### END OF MAIN ###
 ###################
-register_function_flags 'main' \
+
+register_function_flags 'git status-recursive' \
+                        '-h' '--help' 'false' \
+                        "Print help text" \
                         '-m' '--minimal' 'false' \
+                        "Minimal output" \
                         '' '--exclude-submodule' 'false' \
-                        '' '--no-fetch' 'false'
+                        "Don't check the status of git submodules" \
+                        '' '--no-fetch' 'false' \
+                        "Don't fetch before checking repository status"
 _handle_args_main()
 {
-    _handle_args 'main' "$@"
+    _handle_args 'git status-recursive' "$@"
 
-    define function_usage << END_OF_FUNCTION_USAGE
-Usage: git-status-recursive [ DIR ]
+    define help_text << END_OF_FUNCTION_USAGE
+Usage: git status-recursive [ DIR ]
     DIR: (Optional)
         * Directory to recursively check down from.
 END_OF_FUNCTION_USAGE
@@ -154,12 +160,20 @@ END_OF_FUNCTION_USAGE
             define error_info << END_OF_ERROR_INFO
 Given [ DIR ] is not a directory: '$main_input_dir'
 END_OF_ERROR_INFO
-            invalid_function_usage 2 "$function_usage" "$error_info"
+            invalid_function_usage 2 "$help_text" "$error_info"
             exit 1
         fi
     fi
 
     [[ -n "$main_input_dir" ]] && base_dir="$main_input_dir" || base_dir='.' 
+
+    ###
+    # -h, --help
+    if [[ "$help_flag" == 'true' ]]
+    then
+        echo "$help_text"
+        exit 0
+    fi
 
     ###
     # -m, --minimal
@@ -415,7 +429,8 @@ print_branches_ahead_behind()
 }
 
 register_function_flags 'print_array' \
-                        '-e' '' 'false'
+                        '-e' '' 'false' \
+                        "Corresponding echo '-e' flag. Enables interpretation of backslash escapes."
 
 print_array()
 {
