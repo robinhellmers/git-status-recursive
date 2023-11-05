@@ -58,8 +58,9 @@ main()
 
     local tmpdir=$(mktemp -d)
 
-    local processes=()
+    local processes_id=()
     local processes_name=()
+    local processes_done=()
     for found in $(find "$base_dir" \( -type d -o -type f \) -name ".git")
     do
         if [[ -f "$found" ]]
@@ -73,18 +74,20 @@ main()
 
         sanitized_name=$(sanitize_filename "$found")
         check_git_status "$found" "$tmpdir/$sanitized_name" </dev/null  &
-        processes+=( "$!" )
+        processes_id+=( "$!" )
         processes_name+=( "$found" )
+        processes_done+=( 'false' )
     done
 
     local num_processes_done=0
-    local num_total_processes=${#processes[@]}
+    local num_total_processes=${#processes_id[@]}
     echo -e "\nRepositories checked:"
-    local i=0
+    local indicator_counter=0
+    local num_processes_done=0
     while ((num_processes_done != num_total_processes ))
     do
         local indicator
-        case $((i++)) in
+        case $((indicator_counter++)) in
             1)
                 indicator='/'
                 ;;
@@ -96,18 +99,38 @@ main()
                 ;;
             4)
                 indicator='|'
-                i=0
+                indicator_counter=0
                 ;;
         esac
-        num_processes_done=$(find "$tmpdir" -type f -name "*.done" | wc -l)
+
         # -n and \r to replace line
         echo -ne "***** [$indicator] $num_processes_done/$num_total_processes *****\r"
+
+        ###
+        # Check if processes are done
+        local all_processes_done='true'
+        for i in "${!processes_done[@]}"
+        do
+            if [[ "${processes_done[i]}" != 'true' ]]
+            then # Process is not done previous iteration check
+                # Check if process is done now
+                if ! kill -0 ${processes_id[i]} 2>/dev/null
+                then
+                    processes_done[i]='true'
+                    ((num_processes_done++))
+                else
+                    # Not done
+                    all_processes_done='false'
+                fi
+            fi
+        done
+
+        [[ "$all_processes_done" == 'true' ]] && break
+
         sleep 0.1
     done
     echo -ne "***** $num_processes_done/$num_total_processes *****    \r"
     echo
-
-    wait "${processes[@]}"
 
     # Output everythings from background jobs
     if $minimal_out
@@ -524,7 +547,6 @@ check_git_status()
 
     index_working_tree_status
 
-    touch "$outfile.done" &> /dev/null
     popd >/dev/null
 
     exec 1>/dev/tty
