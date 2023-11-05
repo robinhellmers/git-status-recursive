@@ -154,15 +154,22 @@ main()
 ### END OF MAIN ###
 ###################
 
+register_help_text 'git status-recursive' \
+'git status-recursive [flags] [DIR]
+
+Used for finding out the git status of multiple repositories recursively down from the
+current or specified directory.
+
+[DIR] (Optional): Directory to run recursively down the directory structure from'
+
 register_function_flags 'git status-recursive' \
-                        '-h' '--help' 'false' \
-                        "Print help text" \
                         '-m' '--minimal' 'false' \
                         "Minimal output" \
                         '' '--exclude-submodule' 'false' \
                         "Don't check the status of git submodules" \
                         '' '--no-fetch' 'false' \
                         "Don't fetch before checking repository status"
+
 _handle_args_main()
 {
     _handle_args 'git status-recursive' "$@"
@@ -457,6 +464,13 @@ print_branches_ahead_behind()
 {
     print_array -e "${array_output_ahead_behind[@]}"
 }
+
+register_help_text 'print_array' \
+'print_array [flags] <array>
+
+Output the array elements one by one with a new line per element.
+
+<array>: Array elements given with ${array_name[@]}'
 
 register_function_flags 'print_array' \
                         '-e' '' 'false' \
