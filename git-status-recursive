@@ -199,6 +199,13 @@ END_OF_ERROR_INFO
     fi
 }
 
+colorize()
+{
+    while IFS= read -r line; do
+        echo -e "${1}${line}${COLOR_END}"
+    done
+}
+
 sanitize_filename()
 {
     local new_name
@@ -461,8 +468,12 @@ check_git_status()
     local dir="$1"
     local outfile="$2"
 
-    exec 1>"$outfile"
-    exec 2>>"$outfile"
+    # Open file descriptor 3 for writing to the output file
+    exec 3>>"$outfile"
+    # Redirect stdout to fd 3 (output file)
+    exec 1> >(colorize '' >&3)
+    # Redirect stderr to the colorize function, and then to fd 3 (output file)
+    exec 2> >(colorize "$COLOR_RED" >&3)
 
     repo_dir="${dir%/.git}"
 
