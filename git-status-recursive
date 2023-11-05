@@ -462,7 +462,7 @@ check_git_status()
     local outfile="$2"
 
     exec 1>"$outfile"
-    exec 2>"$outfile"
+    exec 2>>"$outfile"
 
     repo_dir="${dir%/.git}"
 
