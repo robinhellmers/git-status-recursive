@@ -168,7 +168,9 @@ register_function_flags 'git status-recursive' \
                         '' '--exclude-submodule' 'false' \
                         "Don't check the status of git submodules" \
                         '' '--no-fetch' 'false' \
-                        "Don't fetch before checking repository status"
+                        "Don't fetch before checking repository status" \
+                        '' '--exclude-no-local' 'false' \
+                        "Don't check for remote branches not available locally"
 
 _handle_args_main()
 {
@@ -224,6 +226,13 @@ END_OF_ERROR_INFO
     ##
     # --no-fetch
     if [[ "$no_fetch_flag" == 'true' ]]
+    then
+        :
+    fi
+
+    ##
+    # --exclude-no-local
+    if [[ "$exclude_no_local_flag" == 'true' ]]
     then
         :
     fi
@@ -532,7 +541,7 @@ check_git_status()
 
     $minimal_out || print_branches_on_track
     print_branches_no_remote
-    print_branches_no_local
+    $exclude_no_local_flag || print_branches_no_local
     print_branches_ahead_behind
 
     $minimal_out || echo
