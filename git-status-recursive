@@ -663,8 +663,8 @@ check_git_status()
 
         [[ "$show_on_track" == 'true' ]] && print_branches_on_track
         [[ "$exclude_deleted_remote_flag" == 'true' ]] || print_branches_remote_deleted
-        $exclude_no_remote_flag || print_branches_no_remote
-        $exclude_no_local_flag || print_branches_no_local
+        [[ "$exclude_no_remote_flag" == 'true' ]] || print_branches_no_remote
+        [[ "$exclude_no_local_flag" == 'true' ]] || print_branches_no_local
         print_branches_ahead_behind
         echo
     fi
