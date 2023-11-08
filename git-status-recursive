@@ -174,7 +174,7 @@ register_function_flags 'git status-recursive' \
                         '' '--no-fetch' 'false' \
                         "Don't fetch before checking repository status" \
                         '-p' '--prune' 'false' \
-                        "Prune while fetching. E.g. removes upstream removed branches" \
+                        "Prune while fetching. E.g. removes upstream deleted branches" \
                         '-c' '--current-branch' 'false' \
                         "Only check the currently checked out branch" \
                         '' '--on-track' 'false' \
@@ -443,6 +443,7 @@ git_ahead_behind_status_branches()
     
     array_output_branch_on_track=()
     array_output_branch_no_remote=()
+    array_output_branch_deleted_remote=()
     array_output_ahead_behind=()
     local branches_info=$(git for-each-ref --format="%(refname:short) %(upstream:short) %(upstream:track)" refs/heads)
     while IFS=" " read -r local_branch remote track # <<< "$branches_info"
@@ -454,10 +455,19 @@ git_ahead_behind_status_branches()
         array_remote_name+=("$remote_name")
         array_remote_branch+=("$remote_branch")
 
-        local num_ahead_remote="$(grep -Po '(?<=ahead )\d+' <<< "$track")"
-        local num_behind_remote="$(grep -Po '(?<=behind )\d+' <<< "$track")"
-        [[ -z "$num_ahead_remote" ]] && num_ahead_remote=0
-        [[ -z "$num_behind_remote" ]] && num_behind_remote=0
+        local num_ahead_remote=0
+        local num_behind_remote=0
+        if [[ "$track" == '[gone]' ]]
+        then
+            num_ahead_remote='_'
+            num_behind_remote='_'
+            remote_branch='[gone]'
+        elif [[ -n "$track" ]]
+        then
+            num_ahead_remote="$(grep -Po '(?<=ahead )\d+' <<< "$track")"
+            num_behind_remote="$(grep -Po '(?<=behind )\d+' <<< "$track")"
+        fi
+
         array_num_ahead_remote+=($num_ahead_remote)
         array_num_behind_remote+=($num_behind_remote)
 
@@ -475,6 +485,9 @@ git_ahead_behind_status_branches()
                 ;;
             *'[NO REMOTE]'*)
                 array_output_branch_no_remote+=("$formatted_output")
+                ;;
+            *'[DELETED REMOTE]'*)
+                array_output_branch_deleted_remote+=("$formatted_output")
                 ;;
             *)
                 array_output_ahead_behind+=("$formatted_output")
@@ -496,6 +509,12 @@ format_ahead_behind_status_branch()
     if [[ -z "$remote_branch" ]]
     then # No remote
         formatted_output="${COLOR_RED}[NO REMOTE]${COLOR_END} $local_branch"
+        return
+    fi
+
+    if [[ "$remote_branch" == '[gone]' ]]
+    then
+        formatted_output="${COLOR_RED}[DELETED REMOTE]${COLOR_END} $local_branch"
         return
     fi
 
@@ -554,6 +573,11 @@ print_branches_no_remote()
 print_branches_no_local()
 {
     print_array -e "${array_output_branch_no_local[@]}"
+}
+
+print_branches_remote_deleted()
+{
+    print_array -e "${array_output_branch_deleted_remote[@]}"
 }
 
 print_branches_ahead_behind()
@@ -629,6 +653,7 @@ check_git_status()
         echo "Branches:"
 
         [[ "$show_on_track" == 'true' ]] && print_branches_on_track
+        print_branches_remote_deleted
         $exclude_no_remote_flag || print_branches_no_remote
         $exclude_no_local_flag || print_branches_no_local
         print_branches_ahead_behind
