@@ -184,7 +184,9 @@ register_function_flags 'git status-recursive' \
                         '' '--exclude-no-local' 'false' \
                         "Don't check for remote branches which aren't available locally" \
                         '' '--exclude-no-remote' 'false' \
-                        "Don't check for local branches which aren't available on the remote"
+                        "Don't check for local branches which aren't available on the remote" \
+                        '' '--exclude-deleted-remote' 'false' \
+                        "Don't check for local branches which have had their remote branch deleted"
 
 _handle_args_main()
 {
@@ -274,6 +276,13 @@ END_OF_ERROR_INFO
     ###
     # --exclude-no-remote
     if [[ "$exclude_no_remote_flag" == 'true' ]]
+    then
+        :
+    fi
+
+    ###
+    # --exclude-deleted-remote
+    if [[ "$exclude_deleted_remote_flag" == 'true' ]]
     then
         :
     fi
@@ -653,7 +662,7 @@ check_git_status()
         echo "Branches:"
 
         [[ "$show_on_track" == 'true' ]] && print_branches_on_track
-        print_branches_remote_deleted
+        [[ "$exclude_deleted_remote_flag" == 'true' ]] || print_branches_remote_deleted
         $exclude_no_remote_flag || print_branches_no_remote
         $exclude_no_local_flag || print_branches_no_local
         print_branches_ahead_behind
