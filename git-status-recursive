@@ -133,19 +133,24 @@ main()
     echo -ne "***** $num_processes_done/$num_total_processes *****    \r"
     echo
 
-    # Output everythings from background jobs
-    if $minimal_out
+    local num_output_files="$(ls -1 "$tmpdir" | wc -l)"
+
+    if (( num_output_files != 0 ))
     then
-        for file in "$tmpdir"/*
-        do
-            if (( $(wc -l < "$file") > 3 ))
-            then
-                echo
-                cat "$file"
-            fi
-        done
-    else
-        cat "$tmpdir"/*
+        # Output everythings from background jobs
+        if [[ "$verbose_flag" == 'true' ]]
+        then
+            cat "$tmpdir"/*
+        else
+            for file in "$tmpdir"/*
+            do
+                if (( $(wc -l < "$file") > 3 )) || true
+                then
+                    echo
+                    cat "$file"
+                fi
+            done
+        fi
     fi
 
     rm -rf "$tmpdir"
@@ -164,8 +169,8 @@ current or specified directory.
 [DIR] (Optional): Directory to run recursively down the directory structure from'
 
 register_function_flags 'git status-recursive' \
-                        '-m' '--minimal' 'false' \
-                        "Minimal output" \
+                        '-v' '--verbose' 'false' \
+                        "Verbose file status" \
                         '' '--no-fetch' 'false' \
                         "Don't fetch before checking repository status" \
                         '-p' '--prune' 'false' \
@@ -215,12 +220,10 @@ END_OF_ERROR_INFO
     fi
 
     ###
-    # -m, --minimal
-    minimal_out=false
-    if [[ "$minimal_flag" == 'true' ]]
+    # -v, --verbose
+    if [[ "$verbose_flag" == 'true' ]]
     then
-        main_minimal_flag='true'
-        minimal_out=true
+        :
     fi
 
     ###
@@ -284,7 +287,7 @@ sanitize_filename()
     echo "$new_name"
 }
 
-convert_porcelain_status_minimal()
+convert_porcelain_status()
 {
     local status_indicator="$1"
 
@@ -329,7 +332,7 @@ convert_porcelain_status_minimal()
     return 0
 }
 
-convert_porcelain_status()
+convert_porcelain_status_verbose()
 {
     local status_indicator="$1"
 
@@ -338,15 +341,9 @@ convert_porcelain_status()
 
     [[ -z "$index_indicator" ]] && [[ -z "$worktree_indicator" ]] && return 1
 
-    if [[ "$index_indicator" == '?' && "$worktree_indicator" == '?' ]]
+    if [[ "$status_indicator" == '??' ]]
     then
-        if $minimal_out
-        then
-            echo -e "${COLOR_RED}MODIFIED FILE${COLOR_END}"
-        else
-            echo -e "${COLOR_RED}[[      UNTRACKED      ]]${COLOR_END}"
-        fi
-
+        echo -e "${COLOR_RED}[[      UNTRACKED      ]]${COLOR_END}"
         return 0
     fi
 
@@ -387,10 +384,6 @@ convert_porcelain_status()
         esac
     done
 
-    if $minimal_out && [[ "$change" == 'true' ]]
-    then
-        output="${COLOR_RED}MODIFIED FILE${COLOR_END}"
-    fi
     echo -e "$output"
 }
 
@@ -400,11 +393,11 @@ index_working_tree_status()
 
     if [[ -z "$porcelain_status" ]]
     then
-        $minimal_out || echo -e "\n[NO CHANGES]"
+        [[ "$verbose_flag" == 'true' ]] && echo -e "\n[NO CHANGES]"
         return 0
     fi
-    $minimal_out || echo
-    $minimal_out || echo "[  Index   ][ Worktree ] <File>"
+    [[ "$verbose_flag" == 'true' ]] && echo
+    [[ "$verbose_flag" == 'true' ]] && echo "[  Index   ][ Worktree ] <File>"
 
     while IFS= read -r line # <<< "$porcelain_status"
     do
@@ -414,9 +407,9 @@ index_working_tree_status()
         local file="${line:3}"
 
         local converted_indicators
-        if $minimal_out
+        if [[ "$verbose_flag" == 'true' ]]
         then
-            converted_indicators=$(convert_porcelain_status_minimal "$status_indicator")
+            converted_indicators=$(convert_porcelain_status_verbose "$status_indicator")
         else
             converted_indicators=$(convert_porcelain_status "$status_indicator")
         fi
@@ -424,8 +417,6 @@ index_working_tree_status()
         echo "${converted_indicators} ${file}"
 
     done <<< "$porcelain_status"
-
-    # $minimal_out && echo
 }
 
 # Excludes current branch in output
@@ -507,13 +498,13 @@ format_ahead_behind_status_branch()
 
     # Not on track with remote
     local output_ahead output_behind
-    if $minimal_out
+    if [[ "$verbose_flag" == 'true' ]]
     then
-        output_ahead="[${num_ahead_remote}>]"
-        output_behind="[<${num_behind_remote}]"
-    else
         output_ahead="[${num_ahead_remote} AHEAD]"
         output_behind="[${num_behind_remote} BEHIND]"
+    else
+        output_ahead="[${num_ahead_remote}>]"
+        output_behind="[<${num_behind_remote}]"
     fi
 
     (( num_ahead_remote != 0 )) && output_ahead="${COLOR_RED}${output_ahead}${COLOR_END}"
@@ -614,7 +605,7 @@ check_git_status()
     
     [[ "$(dirname "$dir")" == '.' ]] && repo_dir="./$(basename $(pwd))"
 
-    $minimal_out || echo
+    [[ "$verbose_flag" == 'true' ]] && echo
     echo -e "${COLOR_BLUE}======================== Repo: $repo_dir ========================${COLOR_END}"
     
     [[ "$prune_flag" == 'true' ]] && local extra_fetch_flags='--prune'
@@ -626,19 +617,15 @@ check_git_status()
     then
         git_check_no_local_branches
 
-        $minimal_out || echo
-        $minimal_out || echo "*** Check branches ***"
-        $minimal_out || echo
+        echo "Branches:"
 
-        $minimal_out || print_branches_on_track
+        [[ "$verbose_flag" == 'true' ]] && print_branches_on_track
         $exclude_no_remote_flag || print_branches_no_remote
         $exclude_no_local_flag || print_branches_no_local
         print_branches_ahead_behind
+        echo
     fi
 
-    $minimal_out || echo
-    $minimal_out || echo "*** Check current branch ***"
-    $minimal_out || echo
     local index
     local found='true'
     local current_branch=$(git rev-parse --abbrev-ref HEAD)
@@ -653,9 +640,9 @@ check_git_status()
                                       "${array_num_ahead_remote[index]}" \
                                       "${array_num_behind_remote[index]}"
 
-    $minimal_out && echo -e "\nCurrent branch: $current_branch"
+    echo "Current branch: $current_branch"
 
-    if ! ( $minimal_out && [[ "$formatted_output" == *'[ON TRACK]'* ]] )
+    if ! ( [[ "$verbose_flag" != 'true' ]] && [[ "$formatted_output" == *'[ON TRACK]'* ]] )
     then
         echo -e "$formatted_output"
     fi
