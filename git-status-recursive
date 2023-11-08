@@ -169,6 +169,8 @@ register_function_flags 'git status-recursive' \
                         "Don't check the status of git submodules" \
                         '' '--no-fetch' 'false' \
                         "Don't fetch before checking repository status" \
+                        '-p' '--prune' 'false' \
+                        "Prune while fetching. E.g. removes upstream removed branches" \
                         '' '--exclude-no-local' 'false' \
                         "Don't check for remote branches not available locally"
 
@@ -216,16 +218,23 @@ END_OF_ERROR_INFO
         minimal_out=true
     fi
 
-    ##
+    ###
     # --exclude-submodule
     if [[ "$exclude_submodule_flag" == 'true' ]]
     then
         :
     fi
 
-    ##
+    ###
     # --no-fetch
     if [[ "$no_fetch_flag" == 'true' ]]
+    then
+        :
+    fi
+
+    ###
+    # -p, --prune
+    if [[ "$prune_flag" == 'true' ]]
     then
         :
     fi
@@ -530,7 +539,8 @@ check_git_status()
     $minimal_out || echo
     echo -e "${COLOR_BLUE}======================== Repo: $repo_dir ========================${COLOR_END}"
     
-    [[ "$no_fetch_flag" != 'true' ]] && git fetch --all &> /dev/null
+    [[ "$prune_flag" == 'true' ]] && local extra_fetch_flags='--prune'
+    [[ "$no_fetch_flag" != 'true' ]] && git fetch --all $extra_fetch_flags &> /dev/null
 
     git_ahead_behind_status_branches
     git_check_no_local_branches
