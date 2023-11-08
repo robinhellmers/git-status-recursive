@@ -170,6 +170,8 @@ register_function_flags 'git status-recursive' \
                         "Don't fetch before checking repository status" \
                         '-p' '--prune' 'false' \
                         "Prune while fetching. E.g. removes upstream removed branches" \
+                        '-c' '--current-branch' 'false' \
+                        "Only check the currently checked out branch" \
                         '' '--exclude-submodule' 'false' \
                         "Don't check the status of git submodules" \
                         '' '--exclude-no-local' 'false' \
@@ -222,13 +224,6 @@ END_OF_ERROR_INFO
     fi
 
     ###
-    # --exclude-submodule
-    if [[ "$exclude_submodule_flag" == 'true' ]]
-    then
-        :
-    fi
-
-    ###
     # --no-fetch
     if [[ "$no_fetch_flag" == 'true' ]]
     then
@@ -238,6 +233,20 @@ END_OF_ERROR_INFO
     ###
     # -p, --prune
     if [[ "$prune_flag" == 'true' ]]
+    then
+        :
+    fi
+
+    ###
+    # -c, --current-branch
+    if [[ "$current_branch_flag" == 'true' ]]
+    then
+        only_current_branch='true'
+    fi
+
+    ###
+    # --exclude-submodule
+    if [[ "$exclude_submodule_flag" == 'true' ]]
     then
         :
     fi
@@ -612,16 +621,20 @@ check_git_status()
     [[ "$no_fetch_flag" != 'true' ]] && git fetch --all $extra_fetch_flags &> /dev/null
 
     git_ahead_behind_status_branches
-    git_check_no_local_branches
 
-    $minimal_out || echo
-    $minimal_out || echo "*** Check branches ***"
-    $minimal_out || echo
+    if [[ "$only_current_branch" != 'true' ]]
+    then
+        git_check_no_local_branches
 
-    $minimal_out || print_branches_on_track
-    $exclude_no_remote_flag || print_branches_no_remote
-    $exclude_no_local_flag || print_branches_no_local
-    print_branches_ahead_behind
+        $minimal_out || echo
+        $minimal_out || echo "*** Check branches ***"
+        $minimal_out || echo
+
+        $minimal_out || print_branches_on_track
+        $exclude_no_remote_flag || print_branches_no_remote
+        $exclude_no_local_flag || print_branches_no_local
+        print_branches_ahead_behind
+    fi
 
     $minimal_out || echo
     $minimal_out || echo "*** Check current branch ***"
