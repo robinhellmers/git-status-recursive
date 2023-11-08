@@ -610,6 +610,8 @@ print_array()
     _handle_args_print_array "$@"
     local array=("${non_flagged_args[@]}")
 
+    [[ -z "${array[@]}" ]] && return 1
+
     local flags=""
     [[ "$e_flag_print_array" == 'true' ]] && flags='-e'
 
@@ -617,6 +619,8 @@ print_array()
     do
         echo $flags "$element"
     done
+
+    return 0
 }
 
 _handle_args_print_array()
@@ -659,14 +663,31 @@ check_git_status()
     then
         git_check_no_local_branches
 
-        echo "Branches:"
+        local output_branches=""
 
-        [[ "$show_on_track" == 'true' ]] && print_branches_on_track
-        [[ "$exclude_deleted_remote_flag" == 'true' ]] || print_branches_remote_deleted
-        [[ "$exclude_no_remote_flag" == 'true' ]] || print_branches_no_remote
-        [[ "$exclude_no_local_flag" == 'true' ]] || print_branches_no_local
-        print_branches_ahead_behind
-        echo
+        if [[ "$show_on_track" == 'true' ]]
+        then
+            output_branches+=$(print_branches_on_track) && output_branches+='\n'
+        fi
+
+        if [[ "$exclude_deleted_remote_flag" == 'true' ]]
+        then
+            output_branches+=$(print_branches_remote_deleted) && output_branches+='\n'
+        fi
+
+        if [[ "$exclude_no_remote_flag" == 'true' ]]
+        then
+            output_branches+=$(print_branches_no_remote) && output_branches+='\n'
+        fi
+
+        if [[ "$exclude_no_local_flag" == 'true' ]]
+        then
+            output_branches+=$(print_branches_no_local) && output_branches+='\n'
+        fi
+
+        output_branches+=$(print_branches_ahead_behind)
+
+        [[ -n "$output_branches" ]] && echo -e "Other branches:\n${output_branches}"
     fi
 
     local index
@@ -683,14 +704,21 @@ check_git_status()
                                       "${array_num_ahead_remote[index]}" \
                                       "${array_num_behind_remote[index]}"
 
-    echo "Current branch: $current_branch"
+    local output_current_branch=""
 
     if ! ( [[ "$verbose_flag" != 'true' ]] && [[ "$formatted_output" == *'[ON TRACK]'* ]] )
     then
-        echo -e "$formatted_output"
+        output_current_branch+="$formatted_output"
     fi
 
-    index_working_tree_status
+    output_current_branch+=$(index_working_tree_status)
+
+    if [[ -n "$output_current_branch" ]]
+    then
+        [[ -n "$output_branches" ]] && echo
+        echo "Current branch: ${current_branch}"
+        echo -e "${output_current_branch}"
+    fi
 
     popd >/dev/null
 
