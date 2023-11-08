@@ -46,6 +46,7 @@ library_sourcing
 ############
 
 COLOR_RED='\033[0;31m'
+COLOR_GREEN='\033[0;32m'
 COLOR_YELLOW='\033[0;33m'
 COLOR_BLUE='\033[0;34m'
 COLOR_END='\033[0m'
@@ -264,9 +265,57 @@ sanitize_filename()
     echo "$new_name"
 }
 
-convert_porcelain_status() {
-    local index_indicator="$1"
-    local worktree_indicator="$2"
+convert_porcelain_status_minimal()
+{
+    local status_indicator="$1"
+
+    local plus="${COLOR_GREEN}+${COLOR_END}"
+    local asterix="${COLOR_RED}*${COLOR_END}"
+    local percentage="${COLOR_RED}%${COLOR_END}"
+
+    case "$status_indicator" in
+        ' M'|' T'|' D')
+            # Unstaged changes
+            echo -e "${asterix} "
+            ;;
+        'M '|'A '|'R '|'C ')
+            # Staged changes
+            echo -e "${plus} "
+            ;;
+        'MM'|'MT'|'MD'|'AM'|'RM'|'CM'|'TM'|'TD')
+            # Staged and modified in worktree
+            echo -e "${plus}${asterix}"
+            ;;
+        '??')
+            # Untracked files
+            echo -e "${percentage}"
+            ;;
+        'UU'|'DD'|'AU'|'UD'|'UA'|'DU'|'AA')
+            # Unmerged states
+            echo -e "${COLOR_RED}MERGE${COLOR_END}"
+            ;;
+        '  ')
+            # Unmodified
+            echo '  ';;
+        '!!')
+            # Ignored files
+            echo '  '
+            ;;
+        *)
+            # Any other state not handled
+            echo -e "${COLOR_RED}UNKOWN${COLOR_END}"
+            ;;
+    esac
+
+    return 0
+}
+
+convert_porcelain_status()
+{
+    local status_indicator="$1"
+
+    local index_indicator="${status_indicator:0:1}"
+    local worktree_indicator="${status_indicator:1:1}"
 
     [[ -z "$index_indicator" ]] && [[ -z "$worktree_indicator" ]] && return 1
 
@@ -284,29 +333,33 @@ convert_porcelain_status() {
 
     local output=""
     local change
+    local color
     for indicator in "$index_indicator" "$worktree_indicator"
     do
+        [[ "$indicator" == "$worktree_indicator" ]] && color="$COLOR_RED"
+        [[ "$indicator" == "$index_indicator" ]] && color="$COLOR_GREEN"
+
         case "$indicator" in
             'M')
                 change='true'
-                output+="${COLOR_RED}[ CHANGED  ]${COLOR_END}" ;;
+                output+="${color}[ CHANGED  ]${COLOR_END}" ;;
             'A')
                 change='true'
-                output+="${COLOR_RED}[ ADDED    ]${COLOR_END}" ;;
+                output+="${color}[  ADDED   ]${COLOR_END}" ;;
             'D')
                 change='true'
-                output+="${COLOR_RED}[ DELETED  ]${COLOR_END}" ;;
+                output+="${color}[ DELETED  ]${COLOR_END}" ;;
             'R')
                 change='true'
-                output+="${COLOR_RED}[ RENAMED  ]${COLOR_END}" ;;
+                output+="${color}[ RENAMED  ]${COLOR_END}" ;;
             'C')
                 change='true'
-                output+="${COLOR_RED}[ COPIED   ]${COLOR_END}" ;;
+                output+="${color}[ COPIED   ]${COLOR_END}" ;;
             'U')
                 change='true'
-                output+="${COLOR_RED}[ UNMERGED ]${COLOR_END}" ;;
+                output+="${color}[ UNMERGED ]${COLOR_END}" ;;
             ' ')
-                output+="[     -     ]"
+                output+='[    --    ]'
                 change='false'
                 ;;
             *)
@@ -332,16 +385,22 @@ index_working_tree_status()
         return 0
     fi
     $minimal_out || echo
-    $minimal_out || echo "[   Index   ][ Worktree ] <File>"
+    $minimal_out || echo "[  Index   ][ Worktree ] <File>"
 
     while IFS= read -r line # <<< "$porcelain_status"
     do
-        local index_indicator="${line:0:1}"
-        local worktree_indicator="${line:1:1}"
+        local status_indicator="${line:0:2}"
+        local index_indicator="${status_indicator:0:1}"
+        local worktree_indicator="${status_indicator:1:1}"
         local file="${line:3}"
 
-        local converted_indicators=$(convert_porcelain_status "$index_indicator" \
-                                                            "$worktree_indicator")
+        local converted_indicators
+        if $minimal_out
+        then
+            converted_indicators=$(convert_porcelain_status_minimal "$status_indicator")
+        else
+            converted_indicators=$(convert_porcelain_status "$status_indicator")
+        fi
 
         echo "${converted_indicators} ${file}"
 
