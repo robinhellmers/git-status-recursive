@@ -166,14 +166,16 @@ current or specified directory.
 register_function_flags 'git status-recursive' \
                         '-m' '--minimal' 'false' \
                         "Minimal output" \
-                        '' '--exclude-submodule' 'false' \
-                        "Don't check the status of git submodules" \
                         '' '--no-fetch' 'false' \
                         "Don't fetch before checking repository status" \
                         '-p' '--prune' 'false' \
                         "Prune while fetching. E.g. removes upstream removed branches" \
+                        '' '--exclude-submodule' 'false' \
+                        "Don't check the status of git submodules" \
                         '' '--exclude-no-local' 'false' \
-                        "Don't check for remote branches not available locally"
+                        "Don't check for remote branches which aren't available locally" \
+                        '' '--exclude-no-remote' 'false' \
+                        "Don't check for local branches which aren't available on the remote"
 
 _handle_args_main()
 {
@@ -240,9 +242,17 @@ END_OF_ERROR_INFO
         :
     fi
 
-    ##
+    ###
     # --exclude-no-local
     if [[ "$exclude_no_local_flag" == 'true' ]]
+    then
+        :
+    fi
+
+
+    ###
+    # --exclude-no-remote
+    if [[ "$exclude_no_remote_flag" == 'true' ]]
     then
         :
     fi
@@ -609,7 +619,7 @@ check_git_status()
     $minimal_out || echo
 
     $minimal_out || print_branches_on_track
-    print_branches_no_remote
+    $exclude_no_remote_flag || print_branches_no_remote
     $exclude_no_local_flag || print_branches_no_local
     print_branches_ahead_behind
 
