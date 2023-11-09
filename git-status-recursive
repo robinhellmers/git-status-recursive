@@ -479,8 +479,6 @@ git_ahead_behind_status_branches()
 
         local remote_name="${remote%%/*}"
         local remote_branch="${remote#*/}"
-        array_remote_name+=("$remote_name")
-        array_remote_branch+=("$remote_branch")
 
         local num_ahead_remote=0
         local num_behind_remote=0
@@ -494,6 +492,9 @@ git_ahead_behind_status_branches()
             num_ahead_remote="$(grep -Po '(?<=ahead )\d+' <<< "$track")"
             num_behind_remote="$(grep -Po '(?<=behind )\d+' <<< "$track")"
         fi
+
+        array_remote_name+=("$remote_name")
+        array_remote_branch+=("$remote_branch")
 
         array_num_ahead_remote+=($num_ahead_remote)
         array_num_behind_remote+=($num_behind_remote)
