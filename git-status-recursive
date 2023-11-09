@@ -175,7 +175,7 @@ register_function_flags 'git status-recursive' \
                         "Don't fetch before checking repository status" \
                         '-p' '--prune' 'false' \
                         "Prune while fetching. E.g. removes upstream deleted branches" \
-                        '-c' '--current-branch' 'false' \
+                        '-c' '--only-current-branch' 'false' \
                         "Only check the currently checked out branch" \
                         '' '--on-track' 'false' \
                         "Show branches which are on track" \
@@ -247,10 +247,10 @@ END_OF_ERROR_INFO
     fi
 
     ###
-    # -c, --current-branch
-    if [[ "$current_branch_flag" == 'true' ]]
+    # -c, --only-current-branch
+    if [[ "$only_current_branch_flag" == 'true' ]]
     then
-        only_current_branch='true'
+        :
     fi
 
     ###
@@ -667,7 +667,7 @@ check_git_status()
 
     git_ahead_behind_status_branches
 
-    if [[ "$only_current_branch" != 'true' ]]
+    if [[ "$only_current_branch_flag" != 'true' ]]
     then
         git_check_no_local_branches
 
