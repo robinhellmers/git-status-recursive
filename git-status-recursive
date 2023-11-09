@@ -751,13 +751,14 @@ check_git_status()
     if [[ -n "$output_current_branch" ]]
     then
         [[ -n "$output_branches" ]] && all_output+="\n\n"
-        all_output+="Current branch: ${current_branch}\n"
-        all_output+="${output_current_branch}"
-    elif [[ "$in_branch" != 'true' ]]
-    then
         all_output+="Current branch: ${current_branch}"
         [[ "$current_branch" == 'HEAD' ]] && all_output+=" (Detached state)"
-        all_output+="\n"
+        all_output+="\n${output_current_branch}"
+    elif [[ "$in_branch" != 'true' ]]
+    then
+        [[ -n "$output_branches" ]] && all_output+="\n\n"
+        all_output+="Current branch: ${current_branch}"
+        [[ "$current_branch" == 'HEAD' ]] && all_output+=" (Detached state)"
     fi
 
     if [[ -n "$all_output" ]]
