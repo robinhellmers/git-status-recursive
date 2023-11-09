@@ -177,6 +177,8 @@ register_function_flags 'git status-recursive' \
                         "Prune while fetching. E.g. removes upstream deleted branches" \
                         '-c' '--only-current-branch' 'false' \
                         "Only check the currently checked out branch" \
+                        '-f' '--only-file-changes' 'false' \
+                        "Only check for file changes" \
                         '' '--on-track' 'false' \
                         "Show branches which are on track" \
                         '' '--exclude-no-news' 'false' \
@@ -249,6 +251,13 @@ END_OF_ERROR_INFO
     ###
     # -c, --only-current-branch
     if [[ "$only_current_branch_flag" == 'true' ]]
+    then
+        :
+    fi
+
+    ###
+    # -c, --only-file-changes
+    if [[ "$only_file_changes_flag" == 'true' ]]
     then
         :
     fi
@@ -667,7 +676,8 @@ check_git_status()
 
     git_ahead_behind_status_branches
 
-    if [[ "$only_current_branch_flag" != 'true' ]]
+    if [[ "$only_current_branch_flag" != 'true' ]] && \
+       [[ "$only_file_changes_flag" != 'true' ]]
     then
         git_check_no_local_branches
 
@@ -701,25 +711,29 @@ check_git_status()
         fi
     fi
 
-    local index
-    local found='true'
-    local current_branch=$(git rev-parse --abbrev-ref HEAD)
-    for index in ${!array_local_branch[@]}
-    do
-        [[ "${array_local_branch[index]}" == "$current_branch" ]] && break
-    done
-
-    format_ahead_behind_status_branch "$current_branch" \
-                                      "${array_remote_name[index]}" \
-                                      "${array_remote_branch[index]}" \
-                                      "${array_num_ahead_remote[index]}" \
-                                      "${array_num_behind_remote[index]}"
-
     local output_current_branch=""
+    local current_branch=$(git rev-parse --abbrev-ref HEAD)
 
-    if ! ( [[ "$verbose_flag" != 'true' ]] && [[ "$formatted_output" == *'[ON TRACK]'* ]] )
+    if [[ "$only_file_changes_flag" != 'true' ]]
     then
-        output_current_branch+="$formatted_output"
+        local index
+        local found='true'
+
+        for index in ${!array_local_branch[@]}
+        do
+            [[ "${array_local_branch[index]}" == "$current_branch" ]] && break
+        done
+
+        format_ahead_behind_status_branch "$current_branch" \
+                                        "${array_remote_name[index]}" \
+                                        "${array_remote_branch[index]}" \
+                                        "${array_num_ahead_remote[index]}" \
+                                        "${array_num_behind_remote[index]}"
+
+        if ! ( [[ "$verbose_flag" != 'true' ]] && [[ "$formatted_output" == *'[ON TRACK]'* ]] )
+        then
+            output_current_branch+="$formatted_output"
+        fi
     fi
 
     output_current_branch+=$(index_working_tree_status)
