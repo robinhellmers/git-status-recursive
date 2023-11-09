@@ -144,7 +144,7 @@ main()
         else
             for file in "$tmpdir"/*
             do
-                if (( $(wc -l < "$file") > 3 )) || true
+                if (( $(wc -l < "$file") > 0 ))
                 then
                     echo
                     cat "$file"
@@ -179,6 +179,8 @@ register_function_flags 'git status-recursive' \
                         "Only check the currently checked out branch" \
                         '' '--on-track' 'false' \
                         "Show branches which are on track" \
+                        '' '--exclude-no-news' 'false' \
+                        "Don't print repositories which got nothing new to update about." \
                         '' '--exclude-submodule' 'false' \
                         "Don't check the status of git submodules" \
                         '' '--exclude-no-local' 'false' \
@@ -256,6 +258,13 @@ END_OF_ERROR_INFO
     if [[ "$on_track_flag" == 'true' ]]
     then
         show_on_track='true'
+    fi
+
+    ###
+    # --exclude-no-news
+    if [[ "$exclude_no_news_flag" == 'true' ]]
+    then
+        :
     fi
 
     ###
@@ -651,8 +660,7 @@ check_git_status()
     
     [[ "$(dirname "$dir")" == '.' ]] && repo_dir="./$(basename $(pwd))"
 
-    [[ "$verbose_flag" == 'true' ]] && echo
-    echo -e "${COLOR_BLUE}======================== Repo: $repo_dir ========================${COLOR_END}"
+    local all_output=""
     
     [[ "$prune_flag" == 'true' ]] && local extra_fetch_flags='--prune'
     [[ "$no_fetch_flag" != 'true' ]] && git fetch --all $extra_fetch_flags &> /dev/null
@@ -687,7 +695,10 @@ check_git_status()
 
         output_branches+=$(print_branches_ahead_behind)
 
-        [[ -n "$output_branches" ]] && echo -e "Other branches:\n${output_branches}"
+        if [[ -n "$output_branches" ]]
+        then
+            all_output+="Other branches:\n${output_branches}"
+        fi
     fi
 
     local index
@@ -715,9 +726,22 @@ check_git_status()
 
     if [[ -n "$output_current_branch" ]]
     then
-        [[ -n "$output_branches" ]] && echo
-        echo "Current branch: ${current_branch}"
-        echo -e "${output_current_branch}"
+        [[ -n "$output_branches" ]] && all_output+="\n\n"
+        all_output+="Current branch: ${current_branch}\n"
+        all_output+="${output_current_branch}"
+    fi
+
+    if [[ -n "$all_output" ]]
+    then
+        [[ "$verbose_flag" == 'true' ]] && echo
+        echo "${COLOR_BLUE}======================== Repo: $repo_dir ========================${COLOR_END}"
+        echo "$all_output"
+    else
+        if [[ "$exclude_no_news_flag" != 'true' ]]
+        then
+            [[ "$verbose_flag" == 'true' ]] && echo
+            echo -e "${COLOR_BLUE}======================== Repo: $repo_dir ========================${COLOR_END}"
+        fi
     fi
 
     popd >/dev/null
