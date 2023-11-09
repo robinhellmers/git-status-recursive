@@ -717,22 +717,30 @@ check_git_status()
     if [[ "$only_file_changes_flag" != 'true' ]]
     then
         local index
-        local found='true'
+        local in_branch='false'
 
         for index in ${!array_local_branch[@]}
         do
-            [[ "${array_local_branch[index]}" == "$current_branch" ]] && break
+            if [[ "${array_local_branch[index]}" == "$current_branch" ]]
+            then
+                in_branch='true'
+                break
+            fi
         done
 
-        format_ahead_behind_status_branch "$current_branch" \
-                                        "${array_remote_name[index]}" \
-                                        "${array_remote_branch[index]}" \
-                                        "${array_num_ahead_remote[index]}" \
-                                        "${array_num_behind_remote[index]}"
-
-        if ! ( [[ "$verbose_flag" != 'true' ]] && [[ "$formatted_output" == *'[ON TRACK]'* ]] )
+        # If not found, 'current_branch' is probably HEAD
+        if [[ "$in_branch" == 'true' ]]
         then
-            output_current_branch+="$formatted_output"
+            format_ahead_behind_status_branch "$current_branch" \
+                                            "${array_remote_name[index]}" \
+                                            "${array_remote_branch[index]}" \
+                                            "${array_num_ahead_remote[index]}" \
+                                            "${array_num_behind_remote[index]}"
+
+            if ! ( [[ "$verbose_flag" != 'true' ]] && [[ "$formatted_output" == *'[ON TRACK]'* ]] )
+            then
+                output_current_branch+="$formatted_output"
+            fi
         fi
     fi
 
@@ -743,6 +751,11 @@ check_git_status()
         [[ -n "$output_branches" ]] && all_output+="\n\n"
         all_output+="Current branch: ${current_branch}\n"
         all_output+="${output_current_branch}"
+    elif [[ "$in_branch" != 'true' ]]
+    then
+        all_output+="Current branch: ${current_branch}"
+        [[ "$current_branch" == 'HEAD' ]] && all_output+=" (Detached state)"
+        all_output+="\n"
     fi
 
     if [[ -n "$all_output" ]]
