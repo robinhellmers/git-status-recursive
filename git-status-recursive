@@ -331,7 +331,7 @@ convert_porcelain_status()
             # Staged changes
             echo -e "${plus} "
             ;;
-        'MM'|'MT'|'MD'|'AM'|'RM'|'CM'|'TM'|'TD')
+        'MM'|'MT'|'MD'|'AM'|'AD'|'RM'|'CM'|'TM'|'TD')
             # Staged and modified in worktree
             echo -e "${plus}${asterix}"
             ;;
