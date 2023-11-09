@@ -763,13 +763,13 @@ check_git_status()
     if [[ -n "$all_output" ]]
     then
         [[ "$verbose_flag" == 'true' ]] && echo
-        echo "${COLOR_BLUE}======================== Repo: $repo_dir ========================${COLOR_END}"
+        create_repo_divider "$repo_dir"
         echo "$all_output"
     else
         if [[ "$exclude_no_news_flag" != 'true' ]]
         then
             [[ "$verbose_flag" == 'true' ]] && echo
-            echo -e "${COLOR_BLUE}======================== Repo: $repo_dir ========================${COLOR_END}"
+            create_repo_divider "$repo_dir"
         fi
     fi
 
@@ -777,6 +777,41 @@ check_git_status()
 
     exec 1>/dev/tty
     exec 2>/dev/tty
+}
+
+create_repo_divider()
+{
+    local repo_dir="$1"
+    ###
+    # Construct help text lines for each flag & find max line length
+
+    local num_characters_start=25
+
+    local line="$(printf "%.s=" $(seq $num_characters_start)) Repo: $repo_dir "
+    local line_length=$(wc -m <<< "$line")
+    array_flag_description_line+=("$flag_description_line")
+
+    # Update COLUMNS regardless if shopt checkwinsize is enabled
+    if [[ -c /dev/tty ]]
+    then
+        # Pass /dev/tty to the command as if running as background process, the shell
+        # is not attached to a terminal
+        IFS=' ' read LINES COLUMNS < <(stty size </dev/tty)
+    else
+        COLUMNS=80
+    fi
+
+    if (( COLUMNS > line_length ))
+    then
+        characters_width_left=$((COLUMNS - line_length))
+    else
+        characters_width_left=$num_characters_start
+    fi
+
+    line+="$(printf "%.s=" $(seq $characters_width_left))"
+
+    output="${COLOR_BLUE}${line}${COLOR_END}"
+    echo -e "$output"
 }
 
 main_stderr_red()
