@@ -496,6 +496,7 @@ get_info_branches()
     array_remote_branch=()
     array_num_ahead_remote=()
     array_num_behind_remote=()
+    array_ff_merge_possible=()
     # Output string arrays
     array_output_branch_on_track=()
     array_output_branch_no_remote=()
@@ -527,6 +528,15 @@ get_info_branches()
         then
             num_ahead_remote="$(grep -Po '(?<=ahead )\d+' <<< "$info")"
             num_behind_remote="$(grep -Po '(?<=behind )\d+' <<< "$info")"
+
+            # Check if fast-forward merge is possible by checking:
+            # * Remote branch is an ancestor of local branch
+            # * Work-tree is clean
+            if git merge-base --is-ancestor "$remote_branch" "$local_branch" &&
+               git diff-index --quiet HEAD --
+            then
+                ff_merge_possible='true'
+            fi
         fi
 
         array_remote_name+=("$remote_name")
@@ -535,6 +545,10 @@ get_info_branches()
         array_num_ahead_remote+=($num_ahead_remote)
         array_num_behind_remote+=($num_behind_remote)
 
+        array_ff_merge_possible+=("$ff_merge_possible")
+
+
+
         [[ "$local_branch" == "$current_branch" ]] && continue
 
         # Output in variable 'formatted_output'
@@ -542,7 +556,8 @@ get_info_branches()
                                           "$remote_name" \
                                           "$remote_branch" \
                                           "$num_ahead_remote" \
-                                          "$num_behind_remote"
+                                          "$num_behind_remote" \
+                                          "$ff_merge_possible"
 
         case "$formatted_output" in
             *'[ON TRACK]'*)
@@ -570,6 +585,7 @@ format_ahead_behind_status_branch()
     local remote_branch="$3"
     local num_ahead_remote="$4"
     local num_behind_remote="$5" 
+    local ff_merge_possbile="$6"
 
     if [[ -z "$remote_branch" ]]
     then # No remote
@@ -590,20 +606,22 @@ format_ahead_behind_status_branch()
     fi
 
     # Not on track with remote
-    local output_ahead output_behind
+    local output_ahead output_behind output_ff_merge
     if [[ "$verbose" == 'true' ]]
     then
         output_ahead="[${num_ahead_remote} AHEAD]"
         output_behind="[${num_behind_remote} BEHIND]"
+        [[ "$ff_merge_possible" == 'true' ]] && output_ff_merge="${COLOR_GREEN}[FAST-FORWARD]${COLOR_END}"
     else
         output_ahead="[${num_ahead_remote}>]"
         output_behind="[<${num_behind_remote}]"
+        [[ "$ff_merge_possible" == 'true' ]] && output_ff_merge="${COLOR_GREEN}[ff]${COLOR_END}"
     fi
 
     (( num_ahead_remote != 0 )) && output_ahead="${COLOR_RED}${output_ahead}${COLOR_END}"
     (( num_behind_remote != 0 )) && output_behind="${COLOR_YELLOW}${output_behind}${COLOR_END}"
 
-    formatted_output="${output_ahead}${output_behind} $local_branch -> $remote_name/$remote_branch"
+    formatted_output="${output_ahead}${output_behind}${output_ff_merge} $local_branch -> $remote_name/$remote_branch"
 }
 
 check_if_no_local_branches()
@@ -763,7 +781,8 @@ handle_git_repo()
                                             "${array_remote_name[index]}" \
                                             "${array_remote_branch[index]}" \
                                             "${array_num_ahead_remote[index]}" \
-                                            "${array_num_behind_remote[index]}"
+                                            "${array_num_behind_remote[index]}" \
+                                            "${array_ff_merge_possible[index]}"
 
             if ! ( [[ "$verbose" != 'true' ]] && [[ "$formatted_output" == *'[ON TRACK]'* ]] )
             then
