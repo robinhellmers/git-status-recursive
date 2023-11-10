@@ -669,7 +669,7 @@ _handle_args_print_array()
 
 check_git_status()
 {
-    local dir="$1"
+    local git_path="$1"
     local outfile="$2"
 
     # Open file descriptor 3 for writing to the output file
@@ -679,7 +679,10 @@ check_git_status()
     # Redirect stderr to the colorize function, and then to fd 3 (output file)
     exec 2> >(colorize "$COLOR_RED" >&3)
 
-    repo_dir="${dir%/.git}"
+    local is_submodule='false'
+    [[ -f "$git_path" ]] && is_submodule='true'
+
+    repo_dir="${git_path%/.git}"
 
     pushd "$repo_dir" >/dev/null || return
     
@@ -779,13 +782,13 @@ check_git_status()
     if [[ -n "$all_output" ]]
     then
         [[ "$verbose_flag" == 'true' ]] && echo
-        create_repo_divider "$repo_dir"
+        create_repo_divider "$is_submodule" "$repo_dir"
         echo "$all_output"
     else
         if [[ "$exclude_no_news_flag" != 'true' ]]
         then
             [[ "$verbose_flag" == 'true' ]] && echo
-            create_repo_divider "$repo_dir"
+            create_repo_divider "$is_submodule" "$repo_dir"
         fi
     fi
 
@@ -797,13 +800,17 @@ check_git_status()
 
 create_repo_divider()
 {
-    local repo_dir="$1"
-    ###
-    # Construct help text lines for each flag & find max line length
+    local is_submodule="$1"
+    local repo_dir="$2"
+
+    [[ -z "$is_submodule" || -z "$repo_dir" ]] && return 1
 
     local num_characters_start=25
 
-    local line="$(printf "%.s=" $(seq $num_characters_start)) Repo: $repo_dir "
+    local git_type_text='Repo'
+    [[ "$is_submodule" == 'true' ]] && git_type_text='Submodule'
+
+    local line="$(printf "%.s=" $(seq $num_characters_start)) ${git_type_text}: $repo_dir "
     local line_length=$(wc -m <<< "$line")
     array_flag_description_line+=("$flag_description_line")
 
