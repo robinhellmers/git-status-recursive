@@ -62,9 +62,9 @@ main()
     local processes_id=()
     local processes_name=()
     local processes_done=()
-    for found in $(find "$base_dir" \( -type d -o -type f \) -name ".git")
+    for repo_dot_git_dir in $(find "$base_dir" \( -type d -o -type f \) -name ".git")
     do
-        if [[ -f "$found" ]]
+        if [[ -f "$repo_dot_git_dir" ]]
         then
             # .git indicates this is a Git Submodule
             [[ "$exclude_submodule_flag" == 'true' ]] && continue
@@ -73,10 +73,12 @@ main()
             :
         fi
 
-        sanitized_name=$(sanitize_filename "$found")
-        check_git_status "$found" "$tmpdir/$sanitized_name" </dev/null  &
+        sanitized_filename=$(create_sanitized_filename "$repo_dot_git_dir")
+
+        # Background process
+        handle_git_repo "$repo_dot_git_dir" "$tmpdir/$sanitized_filename" </dev/null  &
         processes_id+=( "$!" )
-        processes_name+=( "$found" )
+        processes_name+=( "$repo_dot_git_dir" )
         processes_done+=( 'false' )
     done
 
@@ -313,7 +315,7 @@ colorize()
     done
 }
 
-sanitize_filename()
+create_sanitized_filename()
 {
     local new_name
     [[ "$1" == "./.git" ]] && new_name="$(pwd)" || new_name="$1"
@@ -652,7 +654,7 @@ _handle_args_print_array()
     fi
 }
 
-check_git_status()
+handle_git_repo()
 {
     local git_path="$1"
     local outfile="$2"
@@ -732,7 +734,7 @@ check_git_status()
             fi
         done
 
-        # If not found, 'current_branch' is probably HEAD
+        # If not repo_dot_git_dir, 'current_branch' is probably HEAD
         if [[ "$in_branch" == 'true' ]]
         then
             format_ahead_behind_status_branch "$current_branch" \
