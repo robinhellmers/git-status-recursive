@@ -682,7 +682,7 @@ handle_git_repo()
     local is_submodule='false'
     [[ -f "$git_path" ]] && is_submodule='true'
 
-    repo_dir="${git_path%/.git}"
+    local repo_dir="${git_path%/.git}"
 
     pushd "$repo_dir" >/dev/null || return
     
@@ -700,25 +700,17 @@ handle_git_repo()
     then
         local output_branches=""
 
-        if [[ "$show_on_track" == 'true' ]]
-        then
+        [[ "$show_on_track" == 'true' ]] &&
             output_branches+=$(print_branches_on_track) && output_branches+='\n'
-        fi
 
-        if [[ "$exclude_deleted_remote_flag" == 'true' ]]
-        then
+        [[ "$exclude_deleted_remote_flag" == 'true' ]] &&
             output_branches+=$(print_branches_remote_deleted) && output_branches+='\n'
-        fi
 
-        if [[ "$exclude_no_remote_flag" == 'true' ]]
-        then
+        [[ "$exclude_no_remote_flag" == 'true' ]] &&
             output_branches+=$(print_branches_no_remote) && output_branches+='\n'
-        fi
 
-        if [[ "$exclude_no_local_flag" == 'true' ]]
-        then
+        [[ "$exclude_no_local_flag" == 'true' ]] &&
             output_branches+=$(print_branches_no_local) && output_branches+='\n'
-        fi
 
         output_branches+=$(print_branches_ahead_behind)
 
