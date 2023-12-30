@@ -457,35 +457,43 @@ index_working_tree_status()
     done <<< "$porcelain_status"
 }
 
-# Excludes current branch in output
-git_ahead_behind_status_branches()
+# Creates a set of arrays with info about each branch in the current repo
+#
+# Excludes current branch in the array_output_* arrays
+get_info_branches()
 {
     local current_branch=$(git rev-parse --abbrev-ref HEAD)
+    local local_branch remote track
 
+    ###
+    # Resulting global arrays from this function
     array_local_branch=()
     array_remote_name=()
     array_remote_branch=()
     array_num_ahead_remote=()
     array_num_behind_remote=()
-
-    local local_branch remote track
-    
+    # Output string arrays
     array_output_branch_on_track=()
     array_output_branch_no_remote=()
     array_output_branch_deleted_remote=()
     array_output_ahead_behind=()
+    #
+    ###
+
     local branches_info=$(git for-each-ref --format="%(refname:short) %(upstream:short) %(upstream:track)" refs/heads)
+
+    # Loop through branch info for each branch
     while IFS=" " read -r local_branch remote track # <<< "$branches_info"
     do
         array_local_branch+=("$local_branch")
 
         local remote_name="${remote%%/*}"
         local remote_branch="${remote#*/}"
-
         local num_ahead_remote=0
         local num_behind_remote=0
+
         if [[ "$track" == '[gone]' ]]
-        then
+        then # Branch removed from remote repo
             num_ahead_remote='_'
             num_behind_remote='_'
             remote_branch='[gone]'
@@ -680,7 +688,7 @@ handle_git_repo()
     [[ "$prune_flag" == 'true' ]] && local extra_fetch_flags='--prune'
     [[ "$no_fetch_flag" != 'true' ]] && git fetch --all $extra_fetch_flags &> /dev/null
 
-    git_ahead_behind_status_branches
+    get_info_branches
 
     if [[ "$only_current_branch_flag" != 'true' ]] && \
        [[ "$only_file_changes_flag" != 'true' ]]
