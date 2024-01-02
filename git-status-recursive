@@ -62,21 +62,23 @@ main()
     local processes_id=()
     local processes_name=()
     local processes_done=()
-    for found in $(find "$base_dir" \( -type d -o -type f \) -name ".git")
+    for repo_dot_git_dir in $(find "$base_dir" \( -type d -o -type f \) -name ".git")
     do
-        if [[ -f "$found" ]]
+        if [[ -f "$repo_dot_git_dir" ]]
         then
             # .git indicates this is a Git Submodule
-            [[ "$exclude_submodule_flag" == 'true' ]] && continue
+            [[ "$exclude_submodule" == 'true' ]] && continue
         else
             # .git indicates this is a normal Git Repository
             :
         fi
 
-        sanitized_name=$(sanitize_filename "$found")
-        check_git_status "$found" "$tmpdir/$sanitized_name" </dev/null  &
+        sanitized_filename=$(create_sanitized_filename "$repo_dot_git_dir")
+
+        # Background process
+        handle_git_repo "$repo_dot_git_dir" "$tmpdir/$sanitized_filename" </dev/null  &
         processes_id+=( "$!" )
-        processes_name+=( "$found" )
+        processes_name+=( "$repo_dot_git_dir" )
         processes_done+=( 'false' )
     done
 
@@ -138,7 +140,7 @@ main()
     if (( num_output_files != 0 ))
     then
         # Output everythings from background jobs
-        if [[ "$verbose_flag" == 'true' ]]
+        if [[ "$verbose" == 'true' ]]
         then
             cat "$tmpdir"/*
         else
@@ -231,35 +233,35 @@ END_OF_ERROR_INFO
     # -v, --verbose
     if [[ "$verbose_flag" == 'true' ]]
     then
-        :
+        verbose='true'
     fi
 
     ###
     # --no-fetch
     if [[ "$no_fetch_flag" == 'true' ]]
     then
-        :
+        no_fetch='true'
     fi
 
     ###
     # -p, --prune
     if [[ "$prune_flag" == 'true' ]]
     then
-        :
+        do_prune='true'
     fi
 
     ###
     # -c, --only-current-branch
     if [[ "$only_current_branch_flag" == 'true' ]]
     then
-        :
+        only_current_branch='true'
     fi
 
     ###
     # -c, --only-file-changes
     if [[ "$only_file_changes_flag" == 'true' ]]
     then
-        :
+        only_file_changes='true'
     fi
 
     ###
@@ -273,36 +275,60 @@ END_OF_ERROR_INFO
     # --exclude-no-news
     if [[ "$exclude_no_news_flag" == 'true' ]]
     then
-        :
+        exclude_no_news='true'
     fi
 
     ###
     # --exclude-submodule
     if [[ "$exclude_submodule_flag" == 'true' ]]
     then
-        :
+        exclude_submodule='true'
     fi
 
     ###
     # --exclude-no-local
     if [[ "$exclude_no_local_flag" == 'true' ]]
     then
-        :
+        exclude_no_local='true'
     fi
-
 
     ###
     # --exclude-no-remote
     if [[ "$exclude_no_remote_flag" == 'true' ]]
     then
-        :
+        exclude_no_remote='true'
     fi
 
     ###
     # --exclude-deleted-remote
     if [[ "$exclude_deleted_remote_flag" == 'true' ]]
     then
-        :
+        exclude_deleted_remote='true'
+    fi
+
+    _post_handle_flags
+}
+
+_post_handle_flags()
+{
+    show_branches_ahead_behind='true'
+
+    if [[ "$only_current_branch" == 'true' ]]
+    then
+        show_on_track='false'
+        exclude_deleted_remote='false'
+        exclude_no_remote='false'
+        exclude_no_local='false'
+        show_branches_ahead_behind='false'
+    fi
+
+    if [[ "$only_file_changes" == 'true' ]]
+    then
+        show_on_track='false'
+        exclude_deleted_remote='false'
+        exclude_no_remote='false'
+        exclude_no_local='false'
+        show_branches_ahead_behind='false'
     fi
 }
 
@@ -313,7 +339,7 @@ colorize()
     done
 }
 
-sanitize_filename()
+create_sanitized_filename()
 {
     local new_name
     [[ "$1" == "./.git" ]] && new_name="$(pwd)" || new_name="$1"
@@ -429,11 +455,11 @@ index_working_tree_status()
 
     if [[ -z "$porcelain_status" ]]
     then
-        [[ "$verbose_flag" == 'true' ]] && echo -e "\n[NO CHANGES]"
+        [[ "$verbose" == 'true' ]] && echo -e "\n[NO CHANGES]"
         return 0
     fi
-    [[ "$verbose_flag" == 'true' ]] && echo
-    [[ "$verbose_flag" == 'true' ]] && echo "[  Index   ][ Worktree ] <File>"
+    [[ "$verbose" == 'true' ]] && echo
+    [[ "$verbose" == 'true' ]] && echo "[  Index   ][ Worktree ] <File>"
 
     while IFS= read -r line # <<< "$porcelain_status"
     do
@@ -443,7 +469,7 @@ index_working_tree_status()
         local file="${line:3}"
 
         local converted_indicators
-        if [[ "$verbose_flag" == 'true' ]]
+        if [[ "$verbose" == 'true' ]]
         then
             converted_indicators=$(convert_porcelain_status_verbose "$status_indicator")
         else
@@ -455,42 +481,52 @@ index_working_tree_status()
     done <<< "$porcelain_status"
 }
 
-# Excludes current branch in output
-git_ahead_behind_status_branches()
+# Creates a set of arrays with info about each branch in the current repo
+#
+# Excludes current branch in the array_output_* arrays
+get_info_branches()
 {
     local current_branch=$(git rev-parse --abbrev-ref HEAD)
+    local local_branch remote track
 
+    ###
+    # Resulting global arrays from this function
     array_local_branch=()
     array_remote_name=()
     array_remote_branch=()
     array_num_ahead_remote=()
     array_num_behind_remote=()
-
-    local local_branch remote track
-    
+    # Output string arrays
     array_output_branch_on_track=()
     array_output_branch_no_remote=()
     array_output_branch_deleted_remote=()
     array_output_ahead_behind=()
+    #
+    ###
+
+    check_if_no_local_branches
+
     local branches_info=$(git for-each-ref --format="%(refname:short) %(upstream:short) %(upstream:track)" refs/heads)
-    while IFS=" " read -r local_branch remote track # <<< "$branches_info"
+
+    # Loop through branch info for each branch
+    while IFS=" " read -r local_branch remote info # <<< "$branches_info"
     do
         array_local_branch+=("$local_branch")
 
         local remote_name="${remote%%/*}"
         local remote_branch="${remote#*/}"
-
         local num_ahead_remote=0
         local num_behind_remote=0
-        if [[ "$track" == '[gone]' ]]
-        then
+
+        if [[ "$info" == '[gone]' ]]
+        then # Branch removed from remote repo
             num_ahead_remote='_'
             num_behind_remote='_'
             remote_branch='[gone]'
-        elif [[ -n "$track" ]]
+        elif [[ -n "$info" ]]
         then
-            num_ahead_remote="$(grep -Po '(?<=ahead )\d+' <<< "$track")"
-            num_behind_remote="$(grep -Po '(?<=behind )\d+' <<< "$track")"
+            num_ahead_remote="$(grep -Po '(?<=ahead )\d+' <<< "$info")"
+            num_behind_remote="$(grep -Po '(?<=behind )\d+' <<< "$info")"
         fi
 
         array_remote_name+=("$remote_name")
@@ -501,6 +537,7 @@ git_ahead_behind_status_branches()
 
         [[ "$local_branch" == "$current_branch" ]] && continue
 
+        # Output in variable 'formatted_output'
         format_ahead_behind_status_branch "$local_branch" \
                                           "$remote_name" \
                                           "$remote_branch" \
@@ -554,7 +591,7 @@ format_ahead_behind_status_branch()
 
     # Not on track with remote
     local output_ahead output_behind
-    if [[ "$verbose_flag" == 'true' ]]
+    if [[ "$verbose" == 'true' ]]
     then
         output_ahead="[${num_ahead_remote} AHEAD]"
         output_behind="[${num_behind_remote} BEHIND]"
@@ -569,8 +606,10 @@ format_ahead_behind_status_branch()
     formatted_output="${output_ahead}${output_behind} $local_branch -> $remote_name/$remote_branch"
 }
 
-git_check_no_local_branches()
+check_if_no_local_branches()
 {
+    local local_branch remote_branch
+
     array_output_branch_no_local=()
 
     # For every remote branch
@@ -652,7 +691,7 @@ _handle_args_print_array()
     fi
 }
 
-check_git_status()
+handle_git_repo()
 {
     local git_path="$1"
     local outfile="$2"
@@ -667,7 +706,7 @@ check_git_status()
     local is_submodule='false'
     [[ -f "$git_path" ]] && is_submodule='true'
 
-    repo_dir="${git_path%/.git}"
+    local repo_dir="${git_path%/.git}"
 
     pushd "$repo_dir" >/dev/null || return
     
@@ -675,50 +714,35 @@ check_git_status()
 
     local all_output=""
     
-    [[ "$prune_flag" == 'true' ]] && local extra_fetch_flags='--prune'
-    [[ "$no_fetch_flag" != 'true' ]] && git fetch --all $extra_fetch_flags &> /dev/null
+    [[ "$do_prune" == 'true' ]] && local extra_fetch_flags='--prune'
+    [[ "$no_fetch" != 'true' ]] && git fetch --all $extra_fetch_flags &> /dev/null
 
-    git_ahead_behind_status_branches
+    get_info_branches
 
-    if [[ "$only_current_branch_flag" != 'true' ]] && \
-       [[ "$only_file_changes_flag" != 'true' ]]
-    then
-        git_check_no_local_branches
+    local output_branches=""
 
-        local output_branches=""
+    [[ "$show_on_track" == 'true' ]] &&
+        { output_branches+=$(print_branches_on_track) && output_branches+='\n'; }
 
-        if [[ "$show_on_track" == 'true' ]]
-        then
-            output_branches+=$(print_branches_on_track) && output_branches+='\n'
-        fi
+    [[ "$exclude_deleted_remote" != 'true' ]] &&
+        { output_branches+=$(print_branches_remote_deleted) && output_branches+='\n'; }
 
-        if [[ "$exclude_deleted_remote_flag" == 'true' ]]
-        then
-            output_branches+=$(print_branches_remote_deleted) && output_branches+='\n'
-        fi
+    [[ "$exclude_no_remote" != 'true' ]] &&
+        { output_branches+=$(print_branches_no_remote) && output_branches+='\n'; }
 
-        if [[ "$exclude_no_remote_flag" == 'true' ]]
-        then
-            output_branches+=$(print_branches_no_remote) && output_branches+='\n'
-        fi
+    [[ "$exclude_no_local" != 'true' ]] &&
+        { output_branches+=$(print_branches_no_local) && output_branches+='\n'; }
 
-        if [[ "$exclude_no_local_flag" == 'true' ]]
-        then
-            output_branches+=$(print_branches_no_local) && output_branches+='\n'
-        fi
+    [[ "$show_branches_ahead_behind" == 'true' ]] &&
+        output_branches=$(print_branches_ahead_behind)
 
-        output_branches+=$(print_branches_ahead_behind)
-
-        if [[ -n "$output_branches" ]]
-        then
-            all_output+="Other branches:\n${output_branches}"
-        fi
-    fi
+    [[ -n "$output_branches" ]] &&
+        all_output+="Other branches:\n${output_branches}"
 
     local output_current_branch=""
     local current_branch=$(git rev-parse --abbrev-ref HEAD)
 
-    if [[ "$only_file_changes_flag" != 'true' ]]
+    if [[ "$only_file_changes" != 'true' ]]
     then
         local index
         local in_branch='false'
@@ -732,7 +756,7 @@ check_git_status()
             fi
         done
 
-        # If not found, 'current_branch' is probably HEAD
+        # If not repo_dot_git_dir, 'current_branch' is probably HEAD
         if [[ "$in_branch" == 'true' ]]
         then
             format_ahead_behind_status_branch "$current_branch" \
@@ -741,7 +765,7 @@ check_git_status()
                                             "${array_num_ahead_remote[index]}" \
                                             "${array_num_behind_remote[index]}"
 
-            if ! ( [[ "$verbose_flag" != 'true' ]] && [[ "$formatted_output" == *'[ON TRACK]'* ]] )
+            if ! ( [[ "$verbose" != 'true' ]] && [[ "$formatted_output" == *'[ON TRACK]'* ]] )
             then
                 output_current_branch+="$formatted_output"
             fi
@@ -766,13 +790,13 @@ check_git_status()
 
     if [[ -n "$all_output" ]]
     then
-        [[ "$verbose_flag" == 'true' ]] && echo
+        [[ "$verbose" == 'true' ]] && echo
         create_repo_divider "$is_submodule" "$repo_dir"
         echo "$all_output"
     else
-        if [[ "$exclude_no_news_flag" != 'true' ]]
+        if [[ "$exclude_no_news" != 'true' ]]
         then
-            [[ "$verbose_flag" == 'true' ]] && echo
+            [[ "$verbose" == 'true' ]] && echo
             create_repo_divider "$is_submodule" "$repo_dir"
         fi
     fi
