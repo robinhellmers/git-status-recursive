@@ -481,127 +481,108 @@ index_working_tree_status()
     done <<< "$porcelain_status"
 }
 
-# Creates a set of arrays with info about each branch in the current repo
-#
-# Excludes current branch in the array_output_* arrays
-get_info_branches()
-{
-    local current_branch=$(git rev-parse --abbrev-ref HEAD)
-    local local_branch remote track
-
-    ###
-    # Resulting global arrays from this function
-    array_local_branch=()
-    array_remote_name=()
-    array_remote_branch=()
-    array_num_ahead_remote=()
-    array_num_behind_remote=()
-    array_ff_merge_possible=()
-    # Output string arrays
-    array_output_branch_on_track=()
-    array_output_branch_no_remote=()
-    array_output_branch_deleted_remote=()
-    array_output_ahead_behind=()
-    #
-    ###
-
-    check_if_no_local_branches
-
-    local branches_info=$(git for-each-ref --format="%(refname:short) %(upstream:short) %(upstream:track)" refs/heads)
-
-    # Loop through branch info for each branch
-    while IFS=" " read -r local_branch remote info # <<< "$branches_info"
-    do
-        array_local_branch+=("$local_branch")
-
-        local remote_name="${remote%%/*}"
-        local remote_branch="${remote#*/}"
-        local num_ahead_remote=0
-        local num_behind_remote=0
-
-        if [[ "$info" == '[gone]' ]]
-        then # Branch removed from remote repo
-            num_ahead_remote='_'
-            num_behind_remote='_'
-            remote_branch='[gone]'
-        elif [[ -n "$info" ]]
-        then
-            num_ahead_remote="$(grep -Po '(?<=ahead )\d+' <<< "$info")"
-            num_behind_remote="$(grep -Po '(?<=behind )\d+' <<< "$info")"
-
-            # Check if fast-forward merge is possible by checking:
-            # * Remote branch is an ancestor of local branch
-            # * Work-tree is clean
-            if git merge-base --is-ancestor "$remote_branch" "$local_branch" &&
-               git diff-index --quiet HEAD --
-            then
-                ff_merge_possible='true'
-            fi
-        fi
-
-        array_remote_name+=("$remote_name")
-        array_remote_branch+=("$remote_branch")
-
-        array_num_ahead_remote+=($num_ahead_remote)
-        array_num_behind_remote+=($num_behind_remote)
-
-        array_ff_merge_possible+=("$ff_merge_possible")
-
-
-
-        [[ "$local_branch" == "$current_branch" ]] && continue
-
-        # Output in variable 'formatted_output'
-        format_ahead_behind_status_branch "$local_branch" \
-                                          "$remote_name" \
-                                          "$remote_branch" \
-                                          "$num_ahead_remote" \
-                                          "$num_behind_remote" \
-                                          "$ff_merge_possible"
-
-        case "$formatted_output" in
-            *'[ON TRACK]'*)
-                array_output_branch_on_track+=("$formatted_output")
-                ;;
-            *'[NO REMOTE]'*)
-                array_output_branch_no_remote+=("$formatted_output")
-                ;;
-            *'[DELETED REMOTE]'*)
-                array_output_branch_deleted_remote+=("$formatted_output")
-                ;;
-            *)
-                array_output_ahead_behind+=("$formatted_output")
-                ;;
-        esac
-
-    done <<< "$branches_info"
-}
-
-# Output in variable 'formatted_output'
-format_ahead_behind_status_branch()
+get_info_local_branch()
 {
     local local_branch="$1"
-    local remote_name="$2"
-    local remote_branch="$3"
-    local num_ahead_remote="$4"
-    local num_behind_remote="$5" 
-    local ff_merge_possbile="$6"
+
+    array_local_branch+=("$local_branch")
+
+    local branch_info
+    branch_info=$(git for-each-ref --format="%(upstream:short) %(upstream:track)" refs/heads/$local_branch)
+
+    # Define 'remote', 'tracking_info'
+    local remote tracking_info
+    IFS=' ' read -r remote tracking_info <<< "$branch_info"
+
+    local remote_name="${remote%%/*}"
+    local remote_branch="${remote#*/}"
+    local num_ahead_remote=0
+    local num_behind_remote=0
+
+    if [[ "$tracking_info" == '[gone]' ]]
+    then # Branch removed from remote repo
+        num_ahead_remote='_'
+        num_behind_remote='_'
+        remote_branch='[gone]'
+    elif [[ -n "$tracking_info" ]]
+    then
+        num_ahead_remote="$(grep -Po '(?<=ahead )\d+' <<< "$tracking_info")"
+        num_behind_remote="$(grep -Po '(?<=behind )\d+' <<< "$tracking_info")"
+
+        # Check if fast-forward merge is possible by checking:
+        # * Remote branch is an ancestor of local branch
+        # * Work-tree is clean
+        if git merge-base --is-ancestor "$remote_branch" "$local_branch" &&
+            git diff-index --quiet HEAD --
+        then
+            ff_merge_possible='true'
+        fi
+    fi
+
+    array_remote_name+=("$remote_name")
+    array_remote_branch+=("$remote_branch")
+
+    array_num_ahead_remote+=($num_ahead_remote)
+    array_num_behind_remote+=($num_behind_remote)
+
+    array_ff_merge_possible+=("$ff_merge_possible")
+}
+
+get_info_remote_branch()
+{
+    local remote_branch="$1"
+
+    check_remote_branch_exists_locally "$remote_branch" &&
+        array_remote_branches_without_local+=('true') ||
+        array_remote_branches_without_local+=('false')
+}
+
+check_remote_branch_exists_locally()
+{
+    local remote_branch="$1"
+
+    # Check if any local branch tracks the current remote branch
+    local local_branch
+    local_branch=$(git for-each-ref --format '%(refname:short) %(upstream:short)' refs/heads/ | grep " $remote_branch$"  | cut -d' ' -f1)
+
+    [[ -n "$local_branch" ]]
+}
+
+# Output in variables
+# - 'formatted_output'
+# - 'formatted_output_status'
+format_local_branch_output_string()
+{
+    local array_index=$1
+
+    local local_branch="${array_local_branch[array_index]}"
+    local remote_name="${array_remote_name[array_index]}"
+    local remote_branch="${array_remote_branch[array_index]}"
+    local num_ahead_remote="${array_num_ahead_remote[array_index]}"
+    local num_behind_remote="${array_num_behind_remote[array_index]}"
+    local ff_merge_possible="${array_ff_merge_possible[array_index]}"
+
+    formatted_output=''
+    formatted_output_status=''
 
     if [[ -z "$remote_branch" ]]
     then # No remote
-        formatted_output="${COLOR_RED}[NO REMOTE]${COLOR_END} $local_branch"
+        formatted_output_status='NO REMOTE'
+        formatted_output="${COLOR_RED}[$formatted_output_status]${COLOR_END} $local_branch"
         return
     fi
 
     if [[ "$remote_branch" == '[gone]' ]]
     then
-        formatted_output="${COLOR_RED}[DELETED REMOTE]${COLOR_END} $local_branch"
+        formatted_output_status='DELETED REMOTE'
+        formatted_output="${COLOR_RED}[$formatted_output_status]${COLOR_END} $local_branch"
         return
     fi
 
     if (( num_ahead_remote == 0 && num_behind_remote == 0 ))
     then # On track with remote
-        formatted_output="[ON TRACK] $local_branch"
+        formatted_output_status='ON TRACK'
+        formatted_output="[$formatted_output_status] $local_branch"
         return
     fi
 
@@ -621,28 +602,52 @@ format_ahead_behind_status_branch()
     (( num_ahead_remote != 0 )) && output_ahead="${COLOR_RED}${output_ahead}${COLOR_END}"
     (( num_behind_remote != 0 )) && output_behind="${COLOR_YELLOW}${output_behind}${COLOR_END}"
 
+    formatted_output_status='AHEAD BEHIND'
     formatted_output="${output_ahead}${output_behind}${output_ff_merge} $local_branch -> $remote_name/$remote_branch"
 }
 
-check_if_no_local_branches()
+format_remote_branch_output_string()
 {
-    local local_branch remote_branch
+    local array_index=$1
 
-    array_output_branch_no_local=()
+    local remote_branch="${array_remote_branch[array_index]}"
 
-    # For every remote branch
-    for remote_branch in $(git for-each-ref --format '%(refname:short)' refs/remotes)
-    do
-        [[ "$remote_branch" == */HEAD ]] && continue
+    formatted_output_status=''
+    formatted_output=''
 
-        # Check if any local branch tracks the current remote branch
-        local_branch=$(git for-each-ref --format '%(refname:short) %(upstream:short)' refs/heads/ | grep "$remote_branch$"  | cut -d' ' -f1)
+    if [[ "${array_remote_branches_without_local[array_index]}" == 'true' ]]
+    then
+        formatted_output_status='NO LOCAL'
+        formatted_output="${COLOR_YELLOW}[$formatted_output_status]${COLOR_END} $remote_branch"
+        return 0
+    fi
+}
 
-        if [ -z "$local_branch" ]
-        then
-            array_output_branch_no_local+=("${COLOR_YELLOW}[NO LOCAL]${COLOR_END} $remote_branch")
-        fi
-    done
+
+store_formatted_output()
+{
+    local formatted_output_status="$1"
+    local formatted_output="$2"
+
+    case "$formatted_output_status" in
+        'ON TRACK')
+            array_output_branch_on_track+=("$formatted_output")
+            ;;
+        'NO REMOTE')
+            array_output_branch_no_remote+=("$formatted_output")
+            ;;
+        'DELETED REMOTE')
+            array_output_branch_deleted_remote+=("$formatted_output")
+            ;;
+        'AHEAD BEHIND')
+            array_output_ahead_behind+=("$formatted_output")
+            ;;
+        'NO LOCAL')
+            array_output_branch_no_local+=("$formatted_output")
+            ;;
+        *)
+            ;;
+    esac
 }
 
 print_branches_on_track()
@@ -735,7 +740,87 @@ handle_git_repo()
     [[ "$do_prune" == 'true' ]] && local extra_fetch_flags='--prune'
     [[ "$no_fetch" != 'true' ]] && git fetch --all $extra_fetch_flags &> /dev/null
 
-    get_info_branches
+    # Array of all LOCAL branches
+    local all_local_branches
+    IFS=$'\n' all_local_branches=($(git for-each-ref --format="%(refname:short)" refs/heads))
+
+    # Array of all REMOTE branches
+    local all_remote_branches
+    IFS=$'\n' all_remote_branches=($(git for-each-ref --format '%(refname:short)' refs/remotes))
+
+    ###
+    # Resulting global arrays
+    # Filled by get_info_branch()
+    array_local_branch=()
+    array_remote_name=()
+    array_remote_branch=()
+    array_num_ahead_remote=()
+    array_num_behind_remote=()
+    array_ff_merge_possible=()
+    # Filled by get_info_remote_branch()
+    array_remote_branches_without_local=()
+    # Output string arrays
+    # Filled by store_formatted_output()
+    array_output_branch_on_track=()
+    array_output_branch_no_remote=()
+    array_output_branch_deleted_remote=()
+    array_output_ahead_behind=()
+    #
+    ###
+
+    # Iterate through each LOCAL branch
+    local array_index=0
+    local local_branch
+    for local_branch in "${all_local_branches[@]}"
+    do
+        get_info_local_branch "$local_branch"
+        # Results: Appends to arrays
+        # - array_local_branch
+        # - array_remote_name
+        # - array_remote_branch
+        # - array_num_ahead_remote
+        # - array_num_behind_remote
+        # - array_ff_merge_possible
+
+        format_local_branch_output_string "$array_index"
+        # Results: Variables
+        # - formatted_output
+        # - formatted_output_status
+
+        store_formatted_output "$formatted_output_status" \
+                               "$formatted_output"
+        # Results: Appends to arrays
+        # - array_output_branch_on_track
+        # - array_output_branch_no_remote
+        # - array_output_branch_deleted_remote
+        # - array_output_ahead_behind
+
+        ((array_index++))
+    done
+
+    # Iterate through each REMOTE branch
+    local array_index=0
+    local remote_branch
+    for remote_branch in "${all_remote_branches[@]}"
+    do
+        [[ "$remote_branch" == */HEAD ]] && continue
+
+        get_info_remote_branch "$remote_branch"
+        # Results: Appends to array
+        # - array_remote_branches_without_local
+
+        format_remote_branch_output_string "$array_index"
+        # Results: Variables
+        # - formatted_output
+        # - formatted_output_status
+
+        store_formatted_output "$formatted_output_status" \
+                               "$formatted_output"
+        # Results: Appends to array
+        # - array_output_branch_no_local
+    done
+
+    # If fast forward is possible and flagged to be done, do fast forward merge
 
     local output_branches=""
 
@@ -762,12 +847,12 @@ handle_git_repo()
 
     if [[ "$only_file_changes" != 'true' ]]
     then
-        local index
+        local array_index
         local in_branch='false'
 
-        for index in ${!array_local_branch[@]}
+        for array_index in ${!array_local_branch[@]}
         do
-            if [[ "${array_local_branch[index]}" == "$current_branch" ]]
+            if [[ "${array_local_branch[array_index]}" == "$current_branch" ]]
             then
                 in_branch='true'
                 break
@@ -777,12 +862,10 @@ handle_git_repo()
         # If not repo_dot_git_dir, 'current_branch' is probably HEAD
         if [[ "$in_branch" == 'true' ]]
         then
-            format_ahead_behind_status_branch "$current_branch" \
-                                            "${array_remote_name[index]}" \
-                                            "${array_remote_branch[index]}" \
-                                            "${array_num_ahead_remote[index]}" \
-                                            "${array_num_behind_remote[index]}" \
-                                            "${array_ff_merge_possible[index]}"
+            format_local_branch_output_string "$array_index"
+
+            store_formatted_output "$formatted_output_status" \
+                                   "$formatted_output"
 
             if ! ( [[ "$verbose" != 'true' ]] && [[ "$formatted_output" == *'[ON TRACK]'* ]] )
             then
