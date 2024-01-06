@@ -41,15 +41,27 @@ tmp_find_script_path() {
 
 library_sourcing
 
+########################
+### GLOBAL CONSTANTS ###
+########################
+
+readonly COLOR_RED='\033[0;31m'
+readonly COLOR_GREEN='\033[0;32m'
+readonly COLOR_YELLOW='\033[0;33m'
+readonly COLOR_BLUE='\033[0;34m'
+readonly COLOR_END='\033[0m'
+
+readonly STATUS_NONE=''
+readonly STATUS_ON_TRACK='ON TRACK'
+readonly STATUS_NO_REMOTE='NO REMOTE'
+readonly STATUS_DELETED_REMOTE='DELETED REMOTE'
+readonly STATUS_AHEAD_BEHIND='AHEAD BEHIND'
+readonly STATUS_NO_LOCAL='NO LOCAL'
+
 ############
 ### MAIN ###
 ############
 
-COLOR_RED='\033[0;31m'
-COLOR_GREEN='\033[0;32m'
-COLOR_YELLOW='\033[0;33m'
-COLOR_BLUE='\033[0;34m'
-COLOR_END='\033[0m'
 
 main()
 {
@@ -563,25 +575,25 @@ format_local_branch_output_string()
     local ff_merge_possible="${array_ff_merge_possible[array_index]}"
 
     formatted_output=''
-    formatted_output_status=''
+    formatted_output_status="$STATUS_NONE"
 
     if [[ -z "$remote_branch" ]]
     then # No remote
-        formatted_output_status='NO REMOTE'
+        formatted_output_status="$STATUS_NO_REMOTE"
         formatted_output="${COLOR_RED}[$formatted_output_status]${COLOR_END} $local_branch"
         return
     fi
 
     if [[ "$remote_branch" == '[gone]' ]]
     then
-        formatted_output_status='DELETED REMOTE'
+        formatted_output_status="$STATUS_DELETED_REMOTE"
         formatted_output="${COLOR_RED}[$formatted_output_status]${COLOR_END} $local_branch"
         return
     fi
 
     if (( num_ahead_remote == 0 && num_behind_remote == 0 ))
     then # On track with remote
-        formatted_output_status='ON TRACK'
+        formatted_output_status="$STATUS_ON_TRACK"
         formatted_output="[$formatted_output_status] $local_branch"
         return
     fi
@@ -602,7 +614,7 @@ format_local_branch_output_string()
     (( num_ahead_remote != 0 )) && output_ahead="${COLOR_RED}${output_ahead}${COLOR_END}"
     (( num_behind_remote != 0 )) && output_behind="${COLOR_YELLOW}${output_behind}${COLOR_END}"
 
-    formatted_output_status='AHEAD BEHIND'
+    formatted_output_status="$STATUS_AHEAD_BEHIND"
     formatted_output="${output_ahead}${output_behind}${output_ff_merge} $local_branch -> $remote_name/$remote_branch"
 }
 
@@ -612,12 +624,12 @@ format_remote_branch_output_string()
 
     local remote_branch="${array_remote_branch[array_index]}"
 
-    formatted_output_status=''
+    formatted_output_status="$STATUS_NONE"
     formatted_output=''
 
     if [[ "${array_remote_branches_without_local[array_index]}" == 'true' ]]
     then
-        formatted_output_status='NO LOCAL'
+        formatted_output_status="$STATUS_NO_LOCAL"
         formatted_output="${COLOR_YELLOW}[$formatted_output_status]${COLOR_END} $remote_branch"
         return 0
     fi
@@ -630,19 +642,19 @@ store_formatted_output()
     local formatted_output="$2"
 
     case "$formatted_output_status" in
-        'ON TRACK')
+        "$STATUS_ON_TRACK")
             array_output_branch_on_track+=("$formatted_output")
             ;;
-        'NO REMOTE')
+        "$STATUS_NO_REMOTE")
             array_output_branch_no_remote+=("$formatted_output")
             ;;
-        'DELETED REMOTE')
+        "$STATUS_DELETED_REMOTE")
             array_output_branch_deleted_remote+=("$formatted_output")
             ;;
-        'AHEAD BEHIND')
+        "$STATUS_AHEAD_BEHIND")
             array_output_ahead_behind+=("$formatted_output")
             ;;
-        'NO LOCAL')
+        "$STATUS_NO_LOCAL")
             array_output_branch_no_local+=("$formatted_output")
             ;;
         *)
@@ -873,7 +885,6 @@ handle_git_repo()
             fi
         fi
     fi
-
     [[ -n "$output_current_branch" ]] && output_current_branch+='\n'
     output_current_branch+="$(index_working_tree_status)"
 
@@ -902,6 +913,8 @@ handle_git_repo()
             create_repo_divider "$is_submodule" "$repo_dir"
         fi
     fi
+
+    # 1 newline after this, means beginning of next. Something above is printing newline even though it shouldn't
 
     popd >/dev/null
 
