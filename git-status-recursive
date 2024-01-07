@@ -885,8 +885,13 @@ handle_git_repo()
             fi
         fi
     fi
-    [[ -n "$output_current_branch" ]] && output_current_branch+='\n'
-    output_current_branch+="$(index_working_tree_status)"
+
+    local output_index_working_tree_status="$(index_working_tree_status)"
+
+    [[ -n "$output_current_branch" && -n "$output_index_working_tree_status" ]] &&
+        output_current_branch+="\n"
+
+    output_current_branch+="${output_index_working_tree_status}"
 
     if [[ -n "$output_current_branch" ]]
     then
