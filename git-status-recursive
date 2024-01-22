@@ -741,6 +741,11 @@ handle_git_repo()
     local is_submodule='false'
     [[ -f "$git_path" ]] && is_submodule='true'
 
+    local submodule_indentation_number=10
+    local indentation_number=0
+
+    [[ "$is_submodule" == 'true' ]] && indentation_number=$submodule_indentation_number
+
     local repo_dir="${git_path%/.git}"
 
     pushd "$repo_dir" >/dev/null || return
@@ -909,13 +914,22 @@ handle_git_repo()
     if [[ -n "$all_output" ]]
     then
         [[ "$verbose" == 'true' ]] && echo
-        create_repo_divider "$is_submodule" "$repo_dir"
+        create_repo_divider "$is_submodule" "$indentation_number" "$repo_dir"
+
+        local indentation=''
+        local character=' '
+        if (( indentation_number != 0 ))
+        then
+            indentation=$(printf "%.s$character" $(seq $indentation_number))
+            all_output=$(echo -e "$all_output" | sed "s/^/${indentation}/")
+        fi
+
         echo "$all_output"
     else
         if [[ "$exclude_no_news" != 'true' ]]
         then
             [[ "$verbose" == 'true' ]] && echo
-            create_repo_divider "$is_submodule" "$repo_dir"
+            create_repo_divider "$is_submodule" "$indentation_number" "$repo_dir"
         fi
     fi
 
@@ -930,16 +944,33 @@ handle_git_repo()
 create_repo_divider()
 {
     local is_submodule="$1"
-    local repo_dir="$2"
+    local indentation_number="$2"
+    local repo_dir="$3"
 
     [[ -z "$is_submodule" || -z "$repo_dir" ]] && return 1
 
-    local num_characters_start=25
+    local git_type_text
+    local character_start
+    local character_end
+    local num_characters_start
+    if [[ "$is_submodule" == 'true' ]]
+    then
+        git_type_text='Submodule'
+        character_start='='
+        character_end='='
+        num_characters_start=5
+    else
+        git_type_text='Repo'
+        character_start='='
+        character_end='='
+        num_characters_start=5
+    fi
 
-    local git_type_text='Repo'
-    [[ "$is_submodule" == 'true' ]] && git_type_text='Submodule'
+    local line=''
+    (( indentation_number > 0 )) &&
+        line="$(printf "%.s " $(seq $indentation_number))"
+    line+="$(printf "%.s=" $(seq $num_characters_start)) ${git_type_text}: $repo_dir "
 
-    local line="$(printf "%.s=" $(seq $num_characters_start)) ${git_type_text}: $repo_dir "
     local line_length=$(wc -m <<< "$line")
     array_flag_description_line+=("$flag_description_line")
 
@@ -960,7 +991,7 @@ create_repo_divider()
         characters_width_left=$num_characters_start
     fi
 
-    line+="$(printf "%.s=" $(seq $characters_width_left))"
+    line+="$(printf "%.s$character_end" $(seq $characters_width_left))"
 
     output="${COLOR_BLUE}${line}${COLOR_END}"
     echo -e "$output"
