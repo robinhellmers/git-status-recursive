@@ -210,12 +210,6 @@ _handle_args_main()
 {
     _handle_args 'git status-recursive' "$@"
 
-    define help_text << END_OF_FUNCTION_USAGE
-Usage: git status-recursive [ DIR ]
-    DIR: (Optional)
-        * Directory to recursively check down from.
-END_OF_FUNCTION_USAGE
-
     ###
     # Non-flagged arguments
     if (( ${#non_flagged_args[@]} != 0 ))
@@ -226,20 +220,12 @@ END_OF_FUNCTION_USAGE
             define error_info << END_OF_ERROR_INFO
 Given [ DIR ] is not a directory: '$main_input_dir'
 END_OF_ERROR_INFO
-            invalid_function_usage 2 "$help_text" "$error_info"
+            invalid_function_usage 2 "git status-recursive" "$error_info"
             exit 1
         fi
     fi
 
     [[ -n "$main_input_dir" ]] && base_dir="$main_input_dir" || base_dir='.' 
-
-    ###
-    # -h, --help
-    if [[ "$help_flag" == 'true' ]]
-    then
-        echo "$help_text"
-        exit 0
-    fi
 
     ###
     # -v, --verbose
