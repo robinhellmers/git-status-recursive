@@ -102,6 +102,7 @@ main()
 
     local num_processes_done=0
     local num_total_processes=${#processes_id[@]}
+    local indicator
     local indicator_counter=0
     local num_processes_done=0
     local num_processes_done_previous_iteration=0
@@ -111,30 +112,9 @@ main()
 
     while ((num_processes_done != num_total_processes ))
     do
-        local indicator
-        case $((indicator_counter++)) in
-            1)
-                indicator='/'
-                ;;
-            2)
-                indicator='-'
-                ;;
-            3)
-                indicator='\'
-                ;;
-            4)
-                indicator='|'
-                indicator_counter=0
-                ;;
-        esac
+        update_indicator_state
 
-        local line_1="Repositories checked:"
-        local line_2="***** [$indicator] $num_processes_done/$num_total_processes *****"
-
-        # Buffer both lines to have less flickering in the terminal output
-        output_lines="${MOVE_CURSOR_UP}${CLEAR_TO_END_OF_LINE}${line_1}${MOVE_CURSOR_DOWN}${CLEAR_TO_END_OF_LINE}${line_2}"
-        printf "%b" "$output_lines"
-
+        update_repositories_checked_loading_bar
 
         ###
         # Check if processes are done
@@ -152,21 +132,19 @@ main()
                     # Not done
                     all_processes_done='false'
                     local processes_left=$((num_total_processes - num_processes_done))
+
                     if (( processes_left <= 5 )) &&
                        (( counter_iterations_same_num_processes >= 10 ))
                     then
-
                         if [[ "${process_indicated_stuck[i]}" != 'true' ]]
                         then
                             line_1="${COLOR_YELLOW}Repo is taking time: '$(dirname "${processes_name[i]}")'${COLOR_END}"
                             line_2=""
-                            output_lines="${MOVE_CURSOR_UP}${CLEAR_TO_END_OF_LINE}${line_1}${MOVE_CURSOR_DOWN}${CLEAR_TO_END_OF_LINE}${line_2}"
-                            printf "%b" "$output_lines"
 
+                            output_replace_last_2_lines "$line_1" "$line_2"
                             printf '\n\n'
 
                             process_indicated_stuck[i]='true'
-
                         fi
                     fi
                 fi
@@ -186,15 +164,7 @@ main()
         sleep 0.1
     done
 
-    line_1="Repositories checked:"
-    line_2="***** $num_processes_done/$num_total_processes *****"
-
-    # Buffer both lines to have less flickering in the terminal output
-    output_lines="${MOVE_CURSOR_UP}${CLEAR_TO_END_OF_LINE}${line_1}${MOVE_CURSOR_DOWN}${CLEAR_TO_END_OF_LINE}${line_2}"
-    printf "%b" "$output_lines"
-
-    printf "\n"
-
+    update_repositories_checked_loading_bar
 
     local num_output_files="$(ls -1 "$tmpdir" | wc -l)"
 
@@ -1030,6 +1000,51 @@ create_repo_divider()
 
     output="${COLOR_BLUE}${line}${COLOR_END}"
     echo -e "$output"
+}
+
+update_indicator_state()
+{
+    case $((indicator_counter++)) in
+        1)
+            indicator='/'
+            ;;
+        2)
+            indicator='-'
+            ;;
+        3)
+            indicator='\'
+            ;;
+        4)
+            indicator='|'
+            indicator_counter=1
+            ;;
+    esac
+}
+
+update_repositories_checked_loading_bar()
+{
+    local line_1="Repositories checked:"
+    local line_2
+
+    if (( num_processes_done == num_total_processes ))
+    then
+        line_2="***** $num_processes_done/$num_total_processes *****\n"
+    else
+        line_2="***** [$indicator] $num_processes_done/$num_total_processes *****"
+    fi
+
+    output_replace_last_2_lines "$line_1" "$line_2"
+}
+
+output_replace_last_2_lines()
+{
+    local line_1="$1"
+    local line_2="$2"
+
+    # Buffer both lines to have less flickering in the terminal output
+    output_lines="${MOVE_CURSOR_UP}${CLEAR_TO_END_OF_LINE}${line_1}${MOVE_CURSOR_DOWN}${CLEAR_TO_END_OF_LINE}${line_2}"
+
+    printf "%b" "$output_lines"
 }
 
 main_stderr_red()
