@@ -51,6 +51,10 @@ readonly COLOR_YELLOW='\033[0;33m'
 readonly COLOR_BLUE='\033[0;34m'
 readonly COLOR_END='\033[0m'
 
+readonly MOVE_CURSOR_UP='\033[1F'
+readonly MOVE_CURSOR_DOWN='\033[1E'
+readonly CLEAR_TO_END_OF_LINE='\033[K'
+
 readonly STATUS_NONE=''
 readonly STATUS_ON_TRACK='ON TRACK'
 readonly STATUS_NO_REMOTE='NO REMOTE'
@@ -74,6 +78,7 @@ main()
     local processes_id=()
     local processes_name=()
     local processes_done=()
+    local process_indicated_stuck=()
     for repo_dot_git_dir in $(find "$base_dir" \( -type d -o -type f \) -name ".git")
     do
         if [[ -f "$repo_dot_git_dir" ]]
@@ -92,13 +97,18 @@ main()
         processes_id+=( "$!" )
         processes_name+=( "$repo_dot_git_dir" )
         processes_done+=( 'false' )
+        process_indicated_stuck+=( 'false' )
     done
 
     local num_processes_done=0
     local num_total_processes=${#processes_id[@]}
-    echo -e "\nRepositories checked:"
     local indicator_counter=0
     local num_processes_done=0
+    local num_processes_done_previous_iteration=0
+    local counter_iterations_same_num_processes=0
+
+    printf '\n\n'
+
     while ((num_processes_done != num_total_processes ))
     do
         local indicator
@@ -118,8 +128,13 @@ main()
                 ;;
         esac
 
-        # -n and \r to replace line
-        echo -ne "***** [$indicator] $num_processes_done/$num_total_processes *****\r"
+        local line_1="Repositories checked:"
+        local line_2="***** [$indicator] $num_processes_done/$num_total_processes *****"
+
+        # Buffer both lines to have less flickering in the terminal output
+        output_lines="${MOVE_CURSOR_UP}${CLEAR_TO_END_OF_LINE}${line_1}${MOVE_CURSOR_DOWN}${CLEAR_TO_END_OF_LINE}${line_2}"
+        printf "%b" "$output_lines"
+
 
         ###
         # Check if processes are done
@@ -136,16 +151,50 @@ main()
                 else
                     # Not done
                     all_processes_done='false'
+                    local processes_left=$((num_total_processes - num_processes_done))
+                    if (( processes_left <= 5 )) &&
+                       (( counter_iterations_same_num_processes >= 10 ))
+                    then
+
+                        if [[ "${process_indicated_stuck[i]}" != 'true' ]]
+                        then
+                            line_1="${COLOR_YELLOW}Repo is taking time: '$(dirname "${processes_name[i]}")'${COLOR_END}"
+                            line_2=""
+                            output_lines="${MOVE_CURSOR_UP}${CLEAR_TO_END_OF_LINE}${line_1}${MOVE_CURSOR_DOWN}${CLEAR_TO_END_OF_LINE}${line_2}"
+                            printf "%b" "$output_lines"
+
+                            printf '\n\n'
+
+                            process_indicated_stuck[i]='true'
+
+                        fi
+                    fi
                 fi
             fi
         done
 
         [[ "$all_processes_done" == 'true' ]] && break
 
+        if (( num_processes_done_previous_iteration == $num_processes_done))
+        then
+            ((counter_iterations_same_num_processes++))
+        else
+            counter_iterations_same_num_processes=0
+        fi
+
+        num_processes_done_previous_iteration=$num_processes_done
         sleep 0.1
     done
-    echo -ne "***** $num_processes_done/$num_total_processes *****    \r"
-    echo
+
+    line_1="Repositories checked:"
+    line_2="***** $num_processes_done/$num_total_processes *****"
+
+    # Buffer both lines to have less flickering in the terminal output
+    output_lines="${MOVE_CURSOR_UP}${CLEAR_TO_END_OF_LINE}${line_1}${MOVE_CURSOR_DOWN}${CLEAR_TO_END_OF_LINE}${line_2}"
+    printf "%b" "$output_lines"
+
+    printf "\n"
+
 
     local num_output_files="$(ls -1 "$tmpdir" | wc -l)"
 
