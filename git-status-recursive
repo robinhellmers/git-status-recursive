@@ -45,12 +45,6 @@ library_sourcing
 ### GLOBAL CONSTANTS ###
 ########################
 
-readonly COLOR_RED='\033[0;31m'
-readonly COLOR_GREEN='\033[0;32m'
-readonly COLOR_YELLOW='\033[0;33m'
-readonly COLOR_BLUE='\033[0;34m'
-readonly COLOR_END='\033[0m'
-
 readonly MOVE_CURSOR_UP='\033[1F'
 readonly MOVE_CURSOR_DOWN='\033[1E'
 readonly CLEAR_TO_END_OF_LINE='\033[K'
