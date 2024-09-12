@@ -28,8 +28,8 @@ library_sourcing()
     export LIB_PATH
 
     ### Source libraries ###
-    source "$LIB_PATH/lib_core.bash"
-    source "$LIB_PATH/lib_handle_input.bash"
+    source "$LIB_PATH/lib_core.bash" || exit
+    # source_lib "$LIB_PATH/lib_handle_input.bash"
 }
 
 # Minimal version of find_path(). Should only be used within this script to source library defining find_path().
@@ -193,13 +193,14 @@ main()
 ### END OF MAIN ###
 ###################
 
-register_help_text 'git status-recursive' \
-'git status-recursive [flags] [DIR]
+register_help_text 'git status-recursive' <<-'END_OF_HELP_TEXT'
+git status-recursive [flags] [DIR]
 
 Used for finding out the git status of multiple repositories recursively down from the
 current or specified directory.
 
-[DIR] (Optional): Directory to run recursively down the directory structure from'
+[DIR] (Optional): Directory to run recursively down the directory structure from
+END_OF_HELP_TEXT
 
 register_function_flags 'git status-recursive' \
                         '-v' '--verbose' 'false' \
@@ -692,12 +693,13 @@ print_branches_ahead_behind()
     print_array -e "${array_output_ahead_behind[@]}"
 }
 
-register_help_text 'print_array' \
-'print_array [flags] <array>
+register_help_text 'print_array' <<-'END_OF_HELP_TEXT'
+print_array [flags] <array>
 
 Output the array elements one by one with a new line per element.
 
-<array>: Array elements given with ${array_name[@]}'
+<array>: Array elements given with ${array_name[@]}
+END_OF_HELP_TEXT
 
 register_function_flags 'print_array' \
                         '-e' '' 'false' \
