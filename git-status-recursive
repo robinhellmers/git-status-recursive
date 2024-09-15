@@ -67,40 +67,38 @@ main()
     # Output:
     # - base_dir (Optional)
 
-    local tmpdir=$(mktemp -d)
-
-    local processes_id=()
-    local processes_name=()
-    local processes_done=()
-    local process_indicated_stuck=()
-    for repo_dot_git_dir in $(find "$base_dir" \( -type d -o -type f \) -name ".git")
-    do
-        if [[ -f "$repo_dot_git_dir" ]]
-        then
-            # .git indicates this is a Git Submodule
-            [[ "$exclude_submodule" == 'true' ]] && continue
-        else
-            # .git indicates this is a normal Git Repository
-            :
-        fi
-
-        sanitized_filename=$(create_sanitized_filename "$repo_dot_git_dir")
-
-        # Background process
-        handle_git_repo "$repo_dot_git_dir" "$tmpdir/$sanitized_filename" </dev/null  &
-        processes_id+=( "$!" )
-        processes_name+=( "$repo_dot_git_dir" )
-        processes_done+=( 'false' )
-        process_indicated_stuck+=( 'false' )
-    done
+    local -r tmpdir=$(mktemp -d)
 
     local num_processes_done=0
-    local num_total_processes=${#processes_id[@]}
+    local num_total_processes=0
     local indicator
     local indicator_counter=0
     local num_processes_done=0
     local num_processes_done_previous_iteration=0
     local counter_iterations_same_num_processes=0
+
+    local processes_id=()
+    local processes_name=()
+    local processes_done=()
+    local process_indicated_stuck=()
+
+    local repositories=()
+
+    find_repositories
+
+    for repo in "${repositories[@]}"
+    do
+        sanitized_filename=$(create_sanitized_filename "$repo")
+
+        # Background process
+        handle_git_repo "$repo" "$tmpdir/$sanitized_filename" </dev/null &
+
+        processes_id+=( "$!" )
+        processes_name+=( "$repo" )
+        processes_done+=( 'false' )
+        process_indicated_stuck+=( 'false' )
+        ((num_total_processes++))
+    done
 
     printf '\n\n'
 
@@ -110,75 +108,16 @@ main()
 
         update_repositories_checked_loading_bar
 
-        ###
-        # Check if processes are done
-        local all_processes_done='true'
-        for i in "${!processes_done[@]}"
-        do
-            if [[ "${processes_done[i]}" != 'true' ]]
-            then # Process is not done previous iteration check
-                # Check if process is done now
-                if ! kill -0 ${processes_id[i]} 2>/dev/null
-                then
-                    processes_done[i]='true'
-                    ((num_processes_done++))
-                else
-                    # Not done
-                    all_processes_done='false'
-                    local processes_left=$((num_total_processes - num_processes_done))
+        is_all_processes_done && break
 
-                    if (( processes_left <= 5 )) &&
-                       (( counter_iterations_same_num_processes >= 10 ))
-                    then
-                        if [[ "${process_indicated_stuck[i]}" != 'true' ]]
-                        then
-                            line_1="${COLOR_YELLOW}Repo is taking time: '$(dirname "${processes_name[i]}")'${COLOR_END}"
-                            line_2=""
+        update_stuck_statistics
 
-                            output_replace_last_2_lines "$line_1" "$line_2"
-                            printf '\n\n'
-
-                            process_indicated_stuck[i]='true'
-                        fi
-                    fi
-                fi
-            fi
-        done
-
-        [[ "$all_processes_done" == 'true' ]] && break
-
-        if (( num_processes_done_previous_iteration == $num_processes_done))
-        then
-            ((counter_iterations_same_num_processes++))
-        else
-            counter_iterations_same_num_processes=0
-        fi
-
-        num_processes_done_previous_iteration=$num_processes_done
         sleep 0.1
     done
 
     update_repositories_checked_loading_bar
 
-    local num_output_files="$(ls -1 "$tmpdir" | wc -l)"
-
-    if (( num_output_files != 0 ))
-    then
-        # Output everythings from background jobs
-        if [[ "$verbose" == 'true' ]]
-        then
-            cat "$tmpdir"/*
-        else
-            for file in "$tmpdir"/*
-            do
-                if (( $(wc -l < "$file") > 0 ))
-                then
-                    echo
-                    cat "$file"
-                fi
-            done
-        fi
-    fi
+    output_from_background_jobs
 
     rm -rf "$tmpdir"
 }
@@ -1041,6 +980,107 @@ output_replace_last_2_lines()
     output_lines="${MOVE_CURSOR_UP}${CLEAR_TO_END_OF_LINE}${line_1}${MOVE_CURSOR_DOWN}${CLEAR_TO_END_OF_LINE}${line_2}"
 
     printf "%b" "$output_lines"
+}
+
+find_repositories()
+{
+    for repo_dot_git_dir in $(find "$base_dir" \( -type d -o -type f \) -name ".git")
+    do
+        if [[ -f "$repo_dot_git_dir" ]]
+        then
+            # .git indicates this is a Git Submodule
+            [[ "$exclude_submodule" == 'true' ]] && continue
+        else
+            # .git indicates this is a normal Git Repository
+            :
+        fi
+
+        repositories+=("$repo_dot_git_dir")
+    done
+}
+
+is_all_processes_done()
+{
+    all_processes_done='true'
+
+    for i in "${!processes_done[@]}"
+    do
+        if [[ "${processes_done[i]}" != 'true' ]]
+        then # Process is not done previous iteration check
+            # Check if process is done now
+
+            local is_process_done='false'
+            kill -0 ${processes_id[i]} 2>/dev/null ||
+                is_process_done='true'
+
+            if [[ "$is_process_done" == 'true' ]]
+            then
+                processes_done[i]='true'
+                ((num_processes_done++))
+            else
+                # Not done
+                all_processes_done='false'
+                local processes_left=$((num_total_processes - num_processes_done))
+
+                check_if_stuck
+            fi
+        fi
+    done
+
+    [[ "$all_processes_done" == 'true' ]]
+}
+
+check_if_stuck()
+{
+    if (( processes_left <= 5 )) &&
+       (( counter_iterations_same_num_processes >= 10 ))
+    then
+        if [[ "${process_indicated_stuck[i]}" != 'true' ]]
+        then
+            line_1="${COLOR_YELLOW}Repo is taking time: '$(dirname "${processes_name[i]}")'${COLOR_END}"
+            line_2=""
+
+            output_replace_last_2_lines "$line_1" "$line_2"
+            printf '\n\n'
+
+            process_indicated_stuck[i]='true'
+        fi
+    fi
+}
+
+update_stuck_statistics()
+{
+    if (( num_processes_done_previous_iteration == $num_processes_done))
+    then
+        ((counter_iterations_same_num_processes++))
+    else
+        counter_iterations_same_num_processes=0
+    fi
+
+    num_processes_done_previous_iteration=$num_processes_done
+}
+
+output_from_background_jobs()
+{
+    local num_output_files="$(ls -1 "$tmpdir" | wc -l)"
+
+    if (( num_output_files != 0 ))
+    then
+        # Output everythings from background jobs
+        if [[ "$verbose" == 'true' ]]
+        then
+            cat "$tmpdir"/*
+        else
+            for file in "$tmpdir"/*
+            do
+                if (( $(wc -l < "$file") > 0 ))
+                then
+                    echo
+                    cat "$file"
+                fi
+            done
+        fi
+    fi
 }
 
 main_stderr_red()
