@@ -400,18 +400,20 @@ convert_porcelain_status_verbose()
     echo -e "$output"
 }
 
-index_working_tree_status()
+get_info_index_working_tree_status()
 {
     local porcelain_status=$(git status --porcelain)
+    local output
 
     if [[ -z "$porcelain_status" ]]
     then
-        [[ "$verbose" == 'true' ]] && echo -e "\n[NO CHANGES]"
+        [[ "$verbose" == 'true' ]] && output+="\n[NO CHANGES]"
         return 0
     fi
-    [[ "$verbose" == 'true' ]] && echo
-    [[ "$verbose" == 'true' ]] && echo "[  Index   ][ Worktree ] <File>"
 
+    [[ "$verbose" == 'true' ]] && output+='\n\n[  Index   ][ Worktree ] <File>'
+
+    local first_iter='true'
     while IFS= read -r line # <<< "$porcelain_status"
     do
         local status_indicator="${line:0:2}"
@@ -427,16 +429,19 @@ index_working_tree_status()
             converted_indicators=$(convert_porcelain_status "$status_indicator")
         fi
 
-        echo "${converted_indicators} ${file}"
+        [[ "$first_iter" != 'true' ]] && output+='\n'
 
+        output+="${converted_indicators} ${file}"
+
+        [[ "$first_iter" == 'true' ]] && first_iter='false'
     done <<< "$porcelain_status"
+
+    output_index_working_tree_status="$output"
 }
 
 get_info_local_branch()
 {
     local local_branch="$1"
-
-    array_local_branch+=("$local_branch")
 
     local branch_info
     branch_info=$(git for-each-ref --format="%(upstream:short) %(upstream:track)" refs/heads/$local_branch)
@@ -502,7 +507,7 @@ check_remote_branch_exists_locally()
 # Output in variables
 # - 'formatted_output'
 # - 'formatted_output_status'
-format_local_branch_output_string()
+format_output_string_local_branch_to_remote_status()
 {
     local array_index=$1
 
@@ -575,7 +580,7 @@ format_remote_branch_output_string()
 }
 
 
-store_formatted_output()
+store_formatted_output_string_local_branch_to_remote_status()
 {
     local formatted_output_status="$1"
     local formatted_output="$2"
@@ -601,29 +606,123 @@ store_formatted_output()
     esac
 }
 
+filter_out_branch()
+{
+    local branch_to_filter="$1"
+    shift
+    local array=("$@")
+
+    local filtered_array=()
+    for branch in "${array[@]}"
+    do
+        if [[ "$branch" != *"$branch_to_filter"* ]]
+        then
+            filtered_array+=("$branch")
+        fi
+    done
+
+    array_to_filter=("${filtered_array[@]}")
+}
+
+get_info_other_branches()
+{
+    local output_other_branches=""
+
+    print_branches_on_track
+
+    print_branches_remote_deleted
+
+    print_branches_no_remote
+
+    print_branches_no_local
+}
+
 print_branches_on_track()
 {
-    print_array -e "${array_output_branch_on_track[@]}"
+    [[ "$show_on_track" == 'true' ]] || return 0
+
+    output_other_branches+="$(print_array -e "${array_output_branch_on_track[@]}")"
+    output_other_branches+='\n'
 }
 
 print_branches_no_remote()
 {
-    print_array -e "${array_output_branch_no_remote[@]}"
+    [[ "$exclude_no_remote" == 'true' ]] && return 0
+
+    output_other_branches+="$(print_array -e "${array_output_branch_no_remote[@]}")"
+    output_other_branches+='\n'
 }
 
 print_branches_no_local()
 {
-    print_array -e "${array_output_branch_no_local[@]}"
+    [[ "$exclude_no_local" == 'true' ]] && return 0
+
+    output_other_branches+="$(print_array -e "${array_output_branch_no_local[@]}")"
+    output_other_branches+='\n'
 }
 
 print_branches_remote_deleted()
 {
-    print_array -e "${array_output_branch_deleted_remote[@]}"
+    [[ "$exclude_deleted_remote" == 'true' ]] && return 0
+
+    output_other_branches+="$(print_array -e "${array_output_branch_deleted_remote[@]}")"
+    output_other_branches+='\n'
 }
 
 print_branches_ahead_behind()
 {
-    print_array -e "${array_output_ahead_behind[@]}"
+    [[ "$show_branches_ahead_behind" == 'true' ]] || return 0
+
+    output_other_branches+="$(print_array -e "${array_output_ahead_behind[@]}")"
+    output_other_branches+='\n'
+}
+
+find_array_index()
+{
+    local value_to_find="$1"
+    shift
+    local array=("$@")
+
+    local index
+    for index in "${!array[@]}"
+    do
+        if [[ "${array[index]}" == "$value_to_find" ]]
+        then
+            found_index="$index"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+get_info_current_branch_to_remote_status()
+{
+    [[ "$only_file_changes" == 'true' ]] && return 0
+ 
+    local found_index
+    branch_checked_out='false'
+
+    if find_array_index "$current_branch" "${array_local_branch[@]}"
+    then
+        branch_checked_out='true'
+    fi
+
+    # If not repo_dot_git_dir, 'current_branch' is probably HEAD
+    if [[ "$branch_checked_out" == 'true' ]]
+    then
+        format_output_string_local_branch_to_remote_status "$array_index"
+
+        store_formatted_output_string_local_branch_to_remote_status \
+                                "$formatted_output_status" \
+                                "$formatted_output"
+
+        if [[ "$verbose" == 'true' ]] ||
+            [[ "$formatted_output" != *"[$STATUS_ON_TRACK]"* ]]
+        then
+            output_current_branch+="$formatted_output"
+        fi
+    fi
 }
 
 register_help_text 'print_array' <<-'END_OF_HELP_TEXT'
@@ -717,7 +816,7 @@ handle_git_repo()
     # Filled by get_info_remote_branch()
     array_remote_branches_without_local=()
     # Output string arrays
-    # Filled by store_formatted_output()
+    # Filled by store_formatted_output_string_local_branch_to_remote_status()
     array_output_branch_on_track=()
     array_output_branch_no_remote=()
     array_output_branch_deleted_remote=()
@@ -739,12 +838,13 @@ handle_git_repo()
         # - array_num_behind_remote
         # - array_ff_merge_possible
 
-        format_local_branch_output_string "$array_index"
+        format_output_string_local_branch_to_remote_status "$array_index"
         # Results: Variables
         # - formatted_output
         # - formatted_output_status
 
-        store_formatted_output "$formatted_output_status" \
+        store_formatted_output_string_local_branch_to_remote_status \
+                               "$formatted_output_status" \
                                "$formatted_output"
         # Results: Appends to arrays
         # - array_output_branch_on_track
@@ -771,7 +871,7 @@ handle_git_repo()
         # - formatted_output
         # - formatted_output_status
 
-        store_formatted_output "$formatted_output_status" \
+        store_formatted_output_string_local_branch_to_remote_status "$formatted_output_status" \
                                "$formatted_output"
         # Results: Appends to array
         # - array_output_branch_no_local
@@ -779,59 +879,19 @@ handle_git_repo()
 
     # If fast forward is possible and flagged to be done, do fast forward merge
 
-    local output_branches=""
-
-    [[ "$show_on_track" == 'true' ]] &&
-        { output_branches+=$(print_branches_on_track) && output_branches+='\n'; }
-
-    [[ "$exclude_deleted_remote" != 'true' ]] &&
-        { output_branches+=$(print_branches_remote_deleted) && output_branches+='\n'; }
-
-    [[ "$exclude_no_remote" != 'true' ]] &&
-        { output_branches+=$(print_branches_no_remote) && output_branches+='\n'; }
-
-    [[ "$exclude_no_local" != 'true' ]] &&
-        { output_branches+=$(print_branches_no_local) && output_branches+='\n'; }
-
-    [[ "$show_branches_ahead_behind" == 'true' ]] &&
-        output_branches=$(print_branches_ahead_behind)
-
-    [[ -n "$output_branches" ]] &&
-        all_output+="Other branches:\n${output_branches}"
-
-    local output_current_branch=""
     local current_branch=$(git rev-parse --abbrev-ref HEAD)
 
-    if [[ "$only_file_changes" != 'true' ]]
-    then
-        local array_index
-        local in_branch='false'
+    get_info_other_branches
 
-        for array_index in ${!array_local_branch[@]}
-        do
-            if [[ "${array_local_branch[array_index]}" == "$current_branch" ]]
-            then
-                in_branch='true'
-                break
-            fi
-        done
+    [[ -n "$output_other_branches" ]] &&
+        all_output+="Other branches:\n${output_other_branches}"
 
-        # If not repo_dot_git_dir, 'current_branch' is probably HEAD
-        if [[ "$in_branch" == 'true' ]]
-        then
-            format_local_branch_output_string "$array_index"
+    local output_current_branch=""
+    local branch_checked_out
+    get_info_current_branch_to_remote_status
 
-            store_formatted_output "$formatted_output_status" \
-                                   "$formatted_output"
-
-            if ! ( [[ "$verbose" != 'true' ]] && [[ "$formatted_output" == *'[ON TRACK]'* ]] )
-            then
-                output_current_branch+="$formatted_output"
-            fi
-        fi
-    fi
-
-    local output_index_working_tree_status="$(index_working_tree_status)"
+    local output_index_working_tree_status
+    get_info_index_working_tree_status
 
     [[ -n "$output_current_branch" && -n "$output_index_working_tree_status" ]] &&
         output_current_branch+="\n"
@@ -840,13 +900,13 @@ handle_git_repo()
 
     if [[ -n "$output_current_branch" ]]
     then
-        [[ -n "$output_branches" ]] && all_output+="\n\n"
+        [[ -n "$output_other_branches" ]] && all_output+="\n\n"
         all_output+="Current branch: ${current_branch}"
         [[ "$current_branch" == 'HEAD' ]] && all_output+=" (Detached state)"
         all_output+="\n${output_current_branch}"
-    elif [[ "$in_branch" != 'true' ]]
+    elif [[ "$branch_checked_out" != 'true' ]]
     then
-        [[ -n "$output_branches" ]] && all_output+="\n\n"
+        [[ -n "$output_other_branches" ]] && all_output+="\n\n"
         all_output+="Current branch: ${current_branch}"
         [[ "$current_branch" == 'HEAD' ]] && all_output+=" (Detached state)"
     fi
