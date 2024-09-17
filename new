@@ -1,0 +1,479 @@
+#!/usr/bin/env bash
+
+sourceable_script='false'
+
+if [[ "$sourceable_script" != 'true' && ! "${BASH_SOURCE[0]}" -ef "$0" ]]
+then
+    echo "Do not source this script! Execute it with bash instead."
+    return 1
+fi
+unset sourceable_script
+
+########################
+### Library sourcing ###
+########################
+
+library_sourcing()
+{
+    # Unset as only called once and most likely overwritten when sourcing libs
+    unset -f library_sourcing
+
+    local -r THIS_SCRIPT_PATH="$(tmp_find_script_path)"
+
+    # Store $THIS_SCRIPT_PATH as unique or local variables
+    # LIB_PATH is needed by sourced libraries as well
+    readonly PROJECT_BASE_PATH="$THIS_SCRIPT_PATH"
+    export PROJECT_BASE_PATH
+    readonly LIB_PATH="$THIS_SCRIPT_PATH/lib"
+    export LIB_PATH
+
+    ### Source libraries ###
+    source "$LIB_PATH/lib_core.bash" || exit 1
+    # source_lib "$LIB_PATH/lib.bash"
+}
+
+# Minimal version of find_path(). Should only be used within this script to source library defining find_path().
+tmp_find_script_path() {
+    unset -f tmp_find_script_path; local s="${BASH_SOURCE[0]}"; local d
+    while [[ -L "$s" ]]; do d=$(cd -P "$(dirname "$s")" &>/dev/null && pwd); s=$(readlink "$s"); [[ $s != /* ]] && s=$d/$s; done
+    echo "$(cd -P "$(dirname "$s")" &>/dev/null && pwd)"
+}
+
+library_sourcing
+
+########################
+### GLOBAL CONSTANTS ###
+########################
+
+readonly MOVE_CURSOR_UP='\033[1F'
+readonly MOVE_CURSOR_DOWN='\033[1E'
+readonly CLEAR_TO_END_OF_LINE='\033[K'
+
+readonly STATUS_NONE=''
+readonly STATUS_ON_TRACK='ON TRACK'
+readonly STATUS_NO_REMOTE='NO REMOTE'
+readonly STATUS_DELETED_REMOTE='DELETED REMOTE'
+readonly STATUS_AHEAD_BEHIND='AHEAD BEHIND'
+readonly STATUS_NO_LOCAL='NO LOCAL'
+
+############
+### MAIN ###
+############
+
+
+main()
+{
+    local base_dir
+    _handle_args_main "$@"
+
+    local -r tmpdir="$(mktemp -d)"
+
+    local repositories=()
+    find_repositories
+
+    echo "repos: ${repositories[@]}"
+
+    for repo in "${repositories[@]}"
+    do
+        sanitized_filename="$(create_sanitized_filename "$repo")"
+
+        # Background process
+        handle_git_repo "$repo" "$tmpdir/$sanitized_filename" 
+
+        processes_id+=( "$!" )
+        processes_name+=( "$repo" )
+        processes_done+=( 'false' )
+        process_indicated_stuck+=( 'false' )
+        ((num_total_processes++))
+    done
+}
+
+###################
+### END OF MAIN ###
+###################
+
+register_help_text 'git status-recursive' <<-'END_OF_HELP_TEXT'
+git status-recursive [flags] [DIR]
+
+Used for finding out the git status of multiple repositories recursively down from the
+current or specified directory.
+
+[DIR] (Optional): Directory to run recursively down the directory structure from
+END_OF_HELP_TEXT
+
+register_function_flags 'git status-recursive' \
+                        '-v' '--verbose' 'false' \
+                        "Verbose file status" \
+                        '' '--no-fetch' 'false' \
+                        "Don't fetch before checking repository status" \
+                        '-p' '--prune' 'false' \
+                        "Prune while fetching. E.g. removes upstream deleted branches" \
+                        '-c' '--only-current-branch' 'false' \
+                        "Only check the currently checked out branch" \
+                        '-f' '--only-file-changes' 'false' \
+                        "Only check for file changes" \
+                        '' '--on-track' 'false' \
+                        "Show branches which are on track" \
+                        '' '--exclude-no-news' 'false' \
+                        "Don't print repositories which got nothing new to update about." \
+                        '' '--exclude-submodule' 'false' \
+                        "Don't check the status of git submodules" \
+                        '' '--exclude-no-local' 'false' \
+                        "Don't check for remote branches which aren't available locally" \
+                        '' '--exclude-no-remote' 'false' \
+                        "Don't check for local branches which aren't available on the remote" \
+                        '' '--exclude-deleted-remote' 'false' \
+                        "Don't check for local branches which have had their remote branch deleted"
+
+_handle_args_main()
+{
+    _handle_args 'git status-recursive' "$@"
+
+    ###
+    # Non-flagged arguments
+    if (( ${#non_flagged_args[@]} != 0 ))
+    then
+        local main_input_dir="${non_flagged_args[0]}"
+
+        if ! [[ -d "$main_input_dir" ]]
+        then
+            define error_info <<- END_OF_ERROR_INFO
+				Given [DIR] is not a directory: '$main_input_dir'
+			END_OF_ERROR_INFO
+
+            invalid_function_usage 2 "git status-recursive" "$error_info"
+            exit 1
+        fi
+    fi
+
+    [[ -n "$main_input_dir" ]] && base_dir="$main_input_dir" || base_dir='.'
+
+    ###
+    # -v, --verbose
+    if [[ "$verbose_flag" == 'true' ]]
+    then
+        verbose='true'
+    fi
+
+    ###
+    # --no-fetch
+    if [[ "$no_fetch_flag" == 'true' ]]
+    then
+        no_fetch='true'
+    fi
+
+    ###
+    # -p, --prune
+    if [[ "$prune_flag" == 'true' ]]
+    then
+        do_prune='true'
+    fi
+
+    ###
+    # -c, --only-current-branch
+    if [[ "$only_current_branch_flag" == 'true' ]]
+    then
+        only_current_branch='true'
+    fi
+
+    ###
+    # -c, --only-file-changes
+    if [[ "$only_file_changes_flag" == 'true' ]]
+    then
+        only_file_changes='true'
+    fi
+
+    ###
+    # --on-track
+    if [[ "$on_track_flag" == 'true' ]]
+    then
+        show_on_track='true'
+    fi
+
+    ###
+    # --exclude-no-news
+    if [[ "$exclude_no_news_flag" == 'true' ]]
+    then
+        exclude_no_news='true'
+    fi
+
+    ###
+    # --exclude-submodule
+    if [[ "$exclude_submodule_flag" == 'true' ]]
+    then
+        exclude_submodule='true'
+    fi
+
+    ###
+    # --exclude-no-local
+    if [[ "$exclude_no_local_flag" == 'true' ]]
+    then
+        exclude_no_local='true'
+    fi
+
+    ###
+    # --exclude-no-remote
+    if [[ "$exclude_no_remote_flag" == 'true' ]]
+    then
+        exclude_no_remote='true'
+    fi
+
+    ###
+    # --exclude-deleted-remote
+    if [[ "$exclude_deleted_remote_flag" == 'true' ]]
+    then
+        exclude_deleted_remote='true'
+    fi
+
+    _post_handle_flags
+}
+
+_post_handle_flags()
+{
+    show_branches_ahead_behind='true'
+
+    if [[ "$only_current_branch" == 'true' ]]
+    then
+        show_on_track='false'
+        exclude_deleted_remote='false'
+        exclude_no_remote='false'
+        exclude_no_local='false'
+        show_branches_ahead_behind='false'
+    fi
+
+    if [[ "$only_file_changes" == 'true' ]]
+    then
+        show_on_track='false'
+        exclude_deleted_remote='false'
+        exclude_no_remote='false'
+        exclude_no_local='false'
+        show_branches_ahead_behind='false'
+    fi
+}
+
+find_repositories()
+{
+    for repo_dot_git_dir in $(find "$base_dir" \( -type d -o -type f \) -name ".git")
+    do
+        if [[ -f "$repo_dot_git_dir" ]]
+        then
+            # .git indicates this is a Git Submodule
+            [[ "$exclude_submodule" == 'true' ]] && continue
+        else
+            # .git indicates this is a normal Git Repository
+            :
+        fi
+
+        repositories+=("$repo_dot_git_dir")
+    done
+}
+
+create_sanitized_filename()
+{
+    local new_name
+    [[ "$1" == "./.git" ]] && new_name="$(pwd)" || new_name="$1"
+
+    # Remove potential /.git suffix, strip leading ./ from the path, and replace / with _
+    new_name=$(echo "$new_name" | sed 's/\/\.git$//' | sed 's/^.\///' | sed 's/\//__/g')
+    echo "$new_name"
+}
+
+handle_git_repo()
+{
+    local git_path="$1"
+    local outfile="$2"
+
+    # Open file descriptor 3 for writing to the output file
+    # exec 3>>"$outfile"
+    # # Redirect stdout to fd 3 (output file)
+    # exec 1> >(colorize '' >&3)
+    # # Redirect stderr to the colorize function, and then to fd 3 (output file)
+    # exec 2> >(colorize "$COLOR_RED" >&3)
+
+    local is_submodule
+    check_if_submodule
+
+    local indentation_number
+    set_output_indentation
+
+    local repo_dir="${git_path%/.git}"
+    local repo_text_representation="$repo_dir"
+
+    pushd "$repo_dir" >/dev/null || return
+
+    if [[ "$repo_text_representation" == '.' ]]
+    then
+        # Current directory. Get directory name as text representation
+        local current_directory_abs_path="$(pwd -P)"
+        local current_directory_name="$(basename "$current_directory_abs_path")"
+
+        repo_text_representation="$current_directory_name"
+    fi
+
+    fetch_git_repository
+
+    local array_local_branches=()
+    get_local_branches
+
+    local array_remote_branches=()
+    get_remote_branches
+
+    ###
+    # Resulting arrays
+    # Filled by get_info_branch()
+    local array_remote_name=()
+    local array_remote_branches=()
+    local array_num_ahead_remote=()
+    local array_num_behind_remote=()
+    local array_ff_merge_possible=()
+    # Filled by get_info_remote_branch()
+    local array_remote_branches_without_local=()
+    # Output string arrays
+    # Filled by store_formatted_output_string_local_branch_to_remote_status()
+    local array_output_branch_on_track=()
+    local array_output_branch_no_remote=()
+    local array_output_branch_deleted_remote=()
+    local array_output_ahead_behind=()
+    #
+    ###
+
+    for local_branch in "${array_local_branches[@]}"
+    do
+        get_info_local_branch "$local_branch"
+    done
+
+    for i in "${!array_local_branches[@]}"
+    do
+        echo
+        echo "i: $i"
+        echo "local branch:  '${array_local_branches[i]}'"
+        echo "remote name:   '${array_remote_name[i]}'"
+        echo "remote branch: '${array_remote_branches[i]}'"
+        echo "num ahead:     '${array_num_ahead_remote[i]}'"
+        echo "num behind:    '${array_num_behind_remote[i]}'"
+        echo "ff possible:   '${array_ff_merge_possible[i]}'"
+    done
+
+
+}
+
+check_if_submodule()
+{
+    local is_submodule='false'
+    [[ -f "$git_path" ]] && is_submodule='true'
+
+    return 0
+}
+
+set_output_indentation()
+{
+    indentation_number=0
+    [[ "$is_submodule" != 'true' ]] && return 0
+
+    local submodule_indentation_number=10
+    indentation_number=$submodule_indentation_number
+}
+
+fetch_git_repository()
+{
+    [[ "$no_fetch" == 'true' ]] && return 0
+
+    local extra_fetch_flags=()
+    [[ "$do_prune" == 'true' ]] &&
+        extra_fetch_flags+=('--prune')
+
+    git fetch --all "${extra_fetch_flags[@]}" &>/dev/null
+}
+
+get_local_branches()
+{
+    IFS=$'\n' array_local_branches=($(git for-each-ref --format="%(refname:short)" refs/heads))
+}
+
+get_remote_branches()
+{
+    IFS=$'\n' array_remote_branches=($(git for-each-ref --format '%(refname:short)' refs/remotes))
+}
+
+get_info_local_branch()
+{
+    local local_branch="$1"
+
+    local branch_info
+    branch_info=$(git for-each-ref --format="%(upstream:short) %(upstream:track)" refs/heads/$local_branch)
+
+    # Define 'remote', 'tracking_info'
+    local remote tracking_info
+    IFS=' ' read -r remote tracking_info <<< "$branch_info"
+
+
+    local remote_name="${remote%%/*}"
+    local remote_branch="${remote#*/}"
+
+    local num_ahead_remote
+    local num_behind_remote
+
+    if [[ "$tracking_info" == '[gone]' ]]
+    then # Branch removed from remote repo
+        num_ahead_remote='_'
+        num_behind_remote='_'
+        remote_branch='[gone]'
+    elif [[ -n "$tracking_info" ]]
+    then
+        num_ahead_remote="$(grep -Po '(?<=ahead )\d+' <<< "$tracking_info")"
+        num_behind_remote="$(grep -Po '(?<=behind )\d+' <<< "$tracking_info")"
+
+        check_fast_forward_merge_possible
+    fi
+
+    array_remote_name+=("$remote_name")
+    array_remote_branches+=("$remote_branch")
+
+    array_num_ahead_remote+=($num_ahead_remote)
+    array_num_behind_remote+=($num_behind_remote)
+
+    array_ff_merge_possible+=("$ff_merge_possible")
+}
+
+check_fast_forward_merge_possible()
+{
+    # Check if fast-forward merge is possible by checking:
+    # * Remote branch is an ancestor of local branch
+    # * Work-tree is clean
+
+    local remote_branch_is_ancestor_local_branch='false'
+    git merge-base --is-ancestor "$remote_branch" "$local_branch" &&
+        is_ancestor='true'
+
+    local clean_worktree='false'
+    git diff-index --quiet HEAD -- &&
+        clean_worktree='true'
+
+    ff_merge_possible='false'
+
+    if [[ "$clean_worktree" == 'true' ]] &&
+       [[ "$remote_branch_is_ancestor_local_branch" == 'true' ]]
+    then
+        ff_merge_possible='true'
+    fi
+}
+
+colorize()
+{
+    local color_code="$1"
+    while IFS= read -r line
+    do
+        echo -e "${color_code}${line}${COLOR_END}"
+    done
+}
+
+main_stderr_red()
+{
+    main "$@" 2> >(sed $'s|.*|\e[31m&\e[m|' >&2)
+}
+
+#################
+### Call main ###
+#################
+main_stderr_red "$@"
+#################
