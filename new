@@ -315,19 +315,21 @@ handle_git_repo()
     local array_local_branches=()
     get_local_branches
 
-    local array_remote_branches=()
+    # Stored on the form 'origin/main'
+    local array_all_remote_branches=()
     get_remote_branches
 
     ###
     # Resulting arrays
-    # Filled by get_info_branch()
+    # Filled by get_info_local_branch()
     local array_remote_name=()
-    local array_remote_branches=()
+    local array_remote_branch_corresponding_to_local=()
     local array_num_ahead_remote=()
     local array_num_behind_remote=()
     local array_ff_merge_possible=()
     # Filled by get_info_remote_branch()
-    local array_remote_branches_without_local=()
+    local array_remote_branches_have_local=()
+    local array_local_branch_corresponding_to_remote=()
     # Output string arrays
     # Filled by store_formatted_output_string_local_branch_to_remote_status()
     local array_output_branch_on_track=()
@@ -342,18 +344,16 @@ handle_git_repo()
         get_info_local_branch "$local_branch"
     done
 
-    for i in "${!array_local_branches[@]}"
+    for remote_ref in "${array_all_remote_branches[@]}"
     do
-        echo
-        echo "i: $i"
-        echo "local branch:  '${array_local_branches[i]}'"
-        echo "remote name:   '${array_remote_name[i]}'"
-        echo "remote branch: '${array_remote_branches[i]}'"
-        echo "num ahead:     '${array_num_ahead_remote[i]}'"
-        echo "num behind:    '${array_num_behind_remote[i]}'"
-        echo "ff possible:   '${array_ff_merge_possible[i]}'"
+        get_info_remote_branch "$remote_ref"
     done
 
+    debug_output_info_gathered "$DEBUG"
+
+    local current_branch=$(git rev-parse --abbrev-ref HEAD)
+
+    
 
 }
 
@@ -392,7 +392,7 @@ get_local_branches()
 
 get_remote_branches()
 {
-    IFS=$'\n' array_remote_branches=($(git for-each-ref --format '%(refname:short)' refs/remotes))
+    IFS=$'\n' array_all_remote_branches=($(git for-each-ref --format '%(refname:short)' refs/remotes))
 }
 
 get_info_local_branch()
@@ -427,7 +427,7 @@ get_info_local_branch()
     fi
 
     array_remote_name+=("$remote_name")
-    array_remote_branches+=("$remote_branch")
+    array_remote_branch_corresponding_to_local+=("$remote_branch")
 
     array_num_ahead_remote+=($num_ahead_remote)
     array_num_behind_remote+=($num_behind_remote)
@@ -456,6 +456,78 @@ check_fast_forward_merge_possible()
     then
         ff_merge_possible='true'
     fi
+}
+
+get_info_remote_branch()
+{
+    local remote_name_and_branch="$1"
+
+    local exists_locally='false'
+
+    is_remote_branch_tracked_by_local "$remote_name_and_branch" &&
+        exists_locally='true'
+
+    array_remote_branches_have_local+=("$exists_locally")
+    array_local_branch_corresponding_to_remote+=("$local_branch_corresponding_remote")
+}
+
+is_remote_branch_tracked_by_local()
+{
+    # On the form '<remote_name>/<remote_branch>'
+    # E.g. 'origin/main'
+    local remote_name_and_branch="$1"
+
+    local all_local_remote_info
+    all_local_remote_info=$(git for-each-ref --format '%(refname:short) %(upstream:short)' refs/heads/)
+
+    local_branch_corresponding_remote=""
+
+    while IFS=' ' read -r local_branch remote_ref
+    do
+        if [[ "$remote_ref" == "$remote_name_and_branch" ]]
+        then
+            local_branch_corresponding_remote="$local_branch"
+            break
+        fi
+    done <<< "$all_local_remote_info"
+
+    [[ -n "$local_branch_corresponding_remote" ]]
+}
+
+debug_output_info_gathered()
+{
+    local debug="$1"
+    [[ "$debug" != 'true' ]] && return 0
+
+    echo
+    echo "*************************************************************"
+    echo "repo: $repo_text_representation"
+    echo
+    echo "#####################################"
+    echo "LOCAL BRANCHES:"
+    for i in "${!array_local_branches[@]}"
+    do
+        echo
+        echo "i: $i"
+        echo "local branch:  '${array_local_branches[i]}'"
+        echo "remote name:   '${array_remote_name[i]}'"
+        echo "remote branch: '${array_remote_branch_corresponding_to_local[i]}'"
+        echo "num ahead:     '${array_num_ahead_remote[i]}'"
+        echo "num behind:    '${array_num_behind_remote[i]}'"
+        echo "ff possible:   '${array_ff_merge_possible[i]}'"
+    done
+
+    echo
+    echo "#####################################"
+    echo "REMOTE BRANCHES:"
+    for i in "${!array_all_remote_branches[@]}"
+    do
+        echo
+        echo "i: $i"
+        echo "remote ref:          '${array_all_remote_branches[i]}'"
+        echo "remote have local:   '${array_remote_branches_have_local[i]}'"
+        echo "corresponding local: '${array_local_branch_corresponding_to_remote[i]}'"
+    done
 }
 
 colorize()
