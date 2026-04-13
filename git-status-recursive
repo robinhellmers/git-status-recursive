@@ -789,7 +789,7 @@ handle_git_repo()
 
     pushd "$repo_dir" >/dev/null || return
     
-    [[ "$(dirname "$git_path")" == '.' ]] && repo_dir="./$(basename $(pwd))"
+    [[ "$(dirname "$git_path")" == '.' ]] && repo_dir="../$(basename $(pwd))"
 
     local all_output=""
     
